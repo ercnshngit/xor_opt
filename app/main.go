@@ -1165,6 +1165,7 @@ func main() {
 	r.HandleFunc("/api/matrices", getMatricesHandler).Methods("GET")
 	r.HandleFunc("/api/matrices", saveMatrixHandler).Methods("POST")
 	r.HandleFunc("/api/matrices/{id:[0-9]+}", getMatrixHandler).Methods("GET")
+	r.HandleFunc("/api/matrices/{id:[0-9]+}/inverse", calculateInverseHandler).Methods("POST")
 	r.HandleFunc("/api/matrices/process", processAndSaveMatrixHandler).Methods("POST")
 	r.HandleFunc("/api/matrices/recalculate", recalculateHandler).Methods("POST")
 	r.HandleFunc("/api/matrices/bulk-recalculate", bulkRecalculateHandler).Methods("POST")

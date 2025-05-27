@@ -198,7 +198,7 @@ func getMatrixHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(record)
 }
 
-// recalculateHandler recalculates algorithms for a matrix
+// recalculateHandler recalculates algorithms for a specific matrix
 func recalculateHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -208,7 +208,17 @@ func recalculateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get the matrix from database
+	if req.MatrixID <= 0 {
+		http.Error(w, "Geçersiz matris ID", http.StatusBadRequest)
+		return
+	}
+
+	// Default algorithms if not specified
+	if len(req.Algorithms) == 0 {
+		req.Algorithms = []string{"boyar", "paar", "slp"}
+	}
+
+	// Get matrix from database
 	record, err := db.GetMatrixByID(req.MatrixID)
 	if err != nil {
 		http.Error(w, "Matris alınamadı: "+err.Error(), http.StatusInternalServerError)
@@ -227,48 +237,47 @@ func recalculateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Recalculate Ham XOR
-	newHamXor := calculateHammingXOR(matrix)
-	
-	// Update Ham XOR in database
-	_, err = db.db.Exec("UPDATE matrix_records SET ham_xor_count = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2", newHamXor, req.MatrixID)
-	if err != nil {
-		http.Error(w, "Ham XOR güncellenemedi: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
+	// Run algorithms in background
+	go func() {
+		log.Printf("Matris %d için algoritma hesaplama başlatıldı", req.MatrixID)
 
-	var boyarResult, paarResult, slpResult *AlgResult
+		var boyarResult, paarResult, slpResult *AlgResult
 
-	// Run requested algorithms
-	for _, algorithm := range req.Algorithms {
-		switch strings.ToLower(algorithm) {
-		case "boyar":
-			boyar := NewBoyarSLP(10) // depth limit
-			result, err := boyar.Solve(matrix)
-			if err == nil {
-				boyarResult = &result
-			}
-		case "paar":
-			paar := NewPaarAlgorithm()
-			result, err := paar.Solve(matrix)
-			if err == nil {
-				paarResult = &result
-			}
-		case "slp":
-			slp := NewSLPHeuristic()
-			result, err := slp.Solve(matrix)
-			if err == nil {
-				slpResult = &result
+		// Run requested algorithms
+		for _, algorithm := range req.Algorithms {
+			switch strings.ToLower(algorithm) {
+			case "boyar":
+				boyar := NewBoyarSLP(10)
+				if result, err := boyar.Solve(matrix); err == nil {
+					boyarResult = &result
+				} else {
+					log.Printf("Boyar algoritması hatası (ID %d): %v", req.MatrixID, err)
+				}
+			case "paar":
+				paar := NewPaarAlgorithm()
+				if result, err := paar.Solve(matrix); err == nil {
+					paarResult = &result
+				} else {
+					log.Printf("Paar algoritması hatası (ID %d): %v", req.MatrixID, err)
+				}
+			case "slp":
+				slp := NewSLPHeuristic()
+				if result, err := slp.Solve(matrix); err == nil {
+					slpResult = &result
+				} else {
+					log.Printf("SLP algoritması hatası (ID %d): %v", req.MatrixID, err)
+				}
 			}
 		}
-	}
 
-	// Update database with results
-	err = db.UpdateMatrixResults(req.MatrixID, boyarResult, paarResult, slpResult)
-	if err != nil {
-		http.Error(w, "Sonuçlar güncellenemedi: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
+		// Update database with results
+		err = db.UpdateMatrixResults(req.MatrixID, boyarResult, paarResult, slpResult)
+		if err != nil {
+			log.Printf("Algoritma sonuçları güncellenemedi (ID %d): %v", req.MatrixID, err)
+		} else {
+			log.Printf("Matris %d algoritmaları tamamlandı", req.MatrixID)
+		}
+	}()
 
 	// Return updated record
 	updatedRecord, err := db.GetMatrixByID(req.MatrixID)
@@ -278,29 +287,6 @@ func recalculateHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(updatedRecord)
-}
-
-// parseMatrixFromBinary parses a matrix from its binary string representation
-func parseMatrixFromBinary(binaryStr string) (Matrix, error) {
-	lines := strings.Split(binaryStr, "\n")
-	var matrix Matrix
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-
-		// Remove brackets and split by spaces
-		line = strings.Trim(line, "[]")
-		elements := strings.Fields(line)
-		
-		if len(elements) > 0 {
-			matrix = append(matrix, elements)
-		}
-	}
-
-	return matrix, nil
 }
 
 // processAndSaveMatrixHandler processes a matrix with all algorithms and saves to database
@@ -472,4 +458,27 @@ func bulkRecalculateHandler(w http.ResponseWriter, r *http.Request) {
 		Message:        fmt.Sprintf("%d matris için algoritma hesaplama başlatıldı", len(matrices)),
 	}
 	json.NewEncoder(w).Encode(response)
+}
+
+// calculateInverseHandler calculates and saves the inverse of a matrix
+func calculateInverseHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	vars := mux.Vars(r)
+	idStr := vars["id"]
+
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "Geçersiz ID formatı", http.StatusBadRequest)
+		return
+	}
+
+	// Calculate and save inverse matrix
+	inverseRecord, err := db.SaveMatrixInverse(id)
+	if err != nil {
+		http.Error(w, "Ters matris hesaplanamadı: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(inverseRecord)
 } 

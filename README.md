@@ -6,6 +6,7 @@ Bu uygulama, binary matrisler üzerinde XOR optimizasyon algoritmalarını (Boya
 
 - **Web Arayüzü**: Modern ve kullanıcı dostu web arayüzü
 - **Algoritma Desteği**: Boyar SLP, Paar ve SLP Heuristic algoritmaları
+- **Ters Matris Hesaplama**: Binary matrisler için ters matris hesaplama (GF(2) alanında)
 - **Veritabanı**: PostgreSQL ile matris verilerinin saklanması
 - **Otomatik Import**: Uygulama başlatıldığında matrices-data klasöründeki dosyaların otomatik olarak veritabanına import edilmesi
 - **Filtreleme**: XOR sayılarına göre filtreleme
@@ -63,6 +64,16 @@ Aşağıdaki dosyalar otomatik olarak import edilir:
 3. **Matris Detayı**: Herhangi bir matrise tıklayarak detaylarını görüntüleyebilirsiniz
 4. **Yeni Matris**: Yeni matris ekleyebilirsiniz
 5. **Toplu Yükleme**: Birden fazla matrisin aynı anda yüklenmesi
+6. **Ters Matris Hesaplama**: Matris detay sayfasında "Ters Matris Hesapla" butonu ile ters matris hesaplayabilirsiniz
+
+### Ters Matris Hesaplama
+
+Ters matris hesaplama özelliği:
+- GF(2) alanında (binary field) Gaussian elimination kullanır
+- Sadece kare matrisler için çalışır
+- Hesaplanan ters matris otomatik olarak veritabanına kaydedilir
+- Ters matris için de tüm algoritmalar (Boyar, Paar, SLP) otomatik olarak çalıştırılır
+- Orijinal matris ile ters matris arasında referans bağlantısı kurulur
 
 ### API Endpoints
 
@@ -70,6 +81,7 @@ Aşağıdaki dosyalar otomatik olarak import edilir:
 - `GET /api/matrices` - Matris listesi (pagination ve filtreleme ile)
 - `POST /api/matrices` - Yeni matris kaydetme
 - `GET /api/matrices/{id}` - Matris detayı
+- `POST /api/matrices/{id}/inverse` - Ters matris hesaplama
 - `POST /api/matrices/process` - Matris kaydetme ve algoritmaları çalıştırma
 - `POST /api/matrices/recalculate` - Algoritmaları yeniden çalıştırma
 
@@ -95,6 +107,10 @@ curl -X POST http://localhost:3000/api/matrices \
       ["1", "1", "1"]
     ]
   }'
+
+# Ters matris hesaplama
+curl -X POST http://localhost:3000/api/matrices/1/inverse \
+  -H "Content-Type: application/json"
 
 # Boyar algoritması çalıştırma
 curl -X POST http://localhost:3000/boyar \
@@ -171,28 +187,11 @@ docker-compose logs -f db
 - Uygulama loglarını kontrol edin: `docker-compose logs app`
 
 ### Port Çakışması
-- 3000 veya 5432 portları kullanımda ise docker-compose.yml dosyasında port numaralarını değiştirin 
+- 3000 veya 5432 portları kullanımda ise docker-compose.yml dosyasında port numaralarını değiştirin
 
+### Ters Matris Hesaplama Sorunları
+- Sadece kare matrisler için ters matris hesaplanabilir
+- Matrisin determinantı 0 ise (GF(2) alanında) ters matris hesaplanamaz
+- Hata mesajları uygulama loglarında görüntülenir
 
-
-all 3x3 makalesine atif yapip involutifleri nasil buldugumuzu yazalim
-kanıtı yaz  65 sayfa 4.bolum hocanin doktora tezindeki(atifi hocanin yolladigi makaleden yapacagim, ) involutif elde edilmesini yazcaz. about semi involutary pdf komple turkceye cevrilip yazilacak
-
-2.bolumde magmadan bahset(cikis yeri vs) magma nasil kullanilir ufak ornekler,   slp ve paar den bahset
-
-4bbolumde 3x3 ve 4x4 ornekler sunulacak 4x4 icin aciklama yazilacak  xor sayisi lseq 80 seklinde bakildi 2 uzeri 4 ornekleri
-
-
-5.bolum literatur karsilastirmasi ve sonuclar
-
-involutif mds -> ayni cismin alfa  uzeri 1 ile carpilmis hali -> cikan matris ->
-
-
-semilerin tersi kendisine esit olmadigi icin sifreleme desifreleme esit olmadigi icin yan kanal saldirilarina acik olabilir bu sonuc bolumunde belirtilmeli
-
-
-
-az xor a sahip olanlarin terslerinin de xor maliyetlerine bakmak lazim
-
-programi nasil yazdigini anlat json format
 

@@ -172,6 +172,11 @@ function setupEventListeners() {
         recalculateMatrix();
     });
 
+    // Calculate inverse button
+    document.getElementById('calculateInverseBtn').addEventListener('click', function() {
+        calculateMatrixInverse();
+    });
+
     // Page size selector
     document.getElementById('pageSizeSelect').addEventListener('change', function() {
         currentLimit = parseInt(this.value);
@@ -598,6 +603,22 @@ function displayMatrixDetails(matrix) {
                     <strong>Hash:</strong><br>
                     <code>${matrix.matrix_hash}</code>
                 </div>
+                
+                ${matrix.inverse_matrix_id ? `
+                <div class="mt-3 p-3 border rounded bg-light">
+                    <h6 class="text-primary">Ters Matris Bilgisi</h6>
+                    <div class="mb-2">
+                        <strong>Ters Matris ID:</strong> ${matrix.inverse_matrix_id}
+                    </div>
+                    <div class="mb-2">
+                        <strong>Ters Matris Hash:</strong><br>
+                        <code style="font-size: 0.8em;">${matrix.inverse_matrix_hash || 'N/A'}</code>
+                    </div>
+                    <button class="btn btn-sm btn-outline-primary" onclick="viewMatrix(${matrix.inverse_matrix_id})">
+                        <i class="fas fa-eye"></i> Ters Matrisi Görüntüle
+                    </button>
+                </div>
+                ` : ''}
             </div>
             <div class="col-md-6">
                 <h6>Algoritma Sonuçları</h6>
@@ -1211,6 +1232,44 @@ async function bulkRecalculate() {
     } catch (error) {
         console.error('Error in bulk recalculate:', error);
         showAlert('Toplu hesaplama sırasında hata oluştu: ' + error.message, 'danger');
+    } finally {
+        hideLoading();
+    }
+}
+
+// Calculate matrix inverse
+async function calculateMatrixInverse() {
+    if (!currentMatrixId) return;
+    
+    try {
+        showLoading('Ters matris hesaplanıyor...');
+        
+        const response = await fetch(`/api/matrices/${currentMatrixId}/inverse`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.message || 'Ters matris hesaplama başarısız');
+        }
+        
+        showAlert(`Ters matris başarıyla hesaplandı ve kaydedildi! Yeni matris ID: ${data.id}`, 'success');
+        
+        // Reload matrices list to show the new inverse matrix
+        loadMatrices();
+        
+        // Optionally, show the inverse matrix details
+        setTimeout(() => {
+            viewMatrix(data.id);
+        }, 1000);
+        
+    } catch (error) {
+        console.error('Error calculating matrix inverse:', error);
+        showAlert('Ters matris hesaplama sırasında hata oluştu: ' + error.message, 'danger');
     } finally {
         hideLoading();
     }

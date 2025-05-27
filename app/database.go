@@ -19,23 +19,25 @@ import (
 
 // MatrixRecord represents a matrix record in the database
 type MatrixRecord struct {
-	ID              int       `json:"id"`
-	Title           string    `json:"title"`
-	Group           string    `json:"group"`
-	MatrixBinary    string    `json:"matrix_binary"`
-	MatrixHex       string    `json:"matrix_hex"`
-	HamXorCount     int       `json:"ham_xor_count"`
-	BoyarXorCount   *int      `json:"boyar_xor_count,omitempty"`
-	BoyarDepth      *int      `json:"boyar_depth,omitempty"`
-	BoyarProgram    *string   `json:"boyar_program,omitempty"`
-	PaarXorCount    *int      `json:"paar_xor_count,omitempty"`
-	PaarProgram     *string   `json:"paar_program,omitempty"`
-	SlpXorCount     *int      `json:"slp_xor_count,omitempty"`
-	SlpProgram      *string   `json:"slp_program,omitempty"`
-	SmallestXor     *int      `json:"smallest_xor,omitempty"`
-	MatrixHash      string    `json:"matrix_hash"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID                  int       `json:"id"`
+	Title               string    `json:"title"`
+	Group               string    `json:"group"`
+	MatrixBinary        string    `json:"matrix_binary"`
+	MatrixHex           string    `json:"matrix_hex"`
+	HamXorCount         int       `json:"ham_xor_count"`
+	BoyarXorCount       *int      `json:"boyar_xor_count,omitempty"`
+	BoyarDepth          *int      `json:"boyar_depth,omitempty"`
+	BoyarProgram        *string   `json:"boyar_program,omitempty"`
+	PaarXorCount        *int      `json:"paar_xor_count,omitempty"`
+	PaarProgram         *string   `json:"paar_program,omitempty"`
+	SlpXorCount         *int      `json:"slp_xor_count,omitempty"`
+	SlpProgram          *string   `json:"slp_program,omitempty"`
+	SmallestXor         *int      `json:"smallest_xor,omitempty"`
+	MatrixHash          string    `json:"matrix_hash"`
+	InverseMatrixID     *int      `json:"inverse_matrix_id,omitempty"`
+	InverseMatrixHash   *string   `json:"inverse_matrix_hash,omitempty"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
 }
 
 // Database represents the PostgreSQL database
@@ -216,7 +218,7 @@ func (d *Database) GetMatrixByID(id int) (*MatrixRecord, error) {
 	SELECT id, title, group_name, matrix_binary, matrix_hex, ham_xor_count, smallest_xor,
 	       boyar_xor_count, boyar_depth, boyar_program,
 	       paar_xor_count, paar_program, slp_xor_count, slp_program,
-	       matrix_hash, created_at, updated_at
+	       matrix_hash, inverse_matrix_id, inverse_matrix_hash, created_at, updated_at
 	FROM matrix_records WHERE id = $1
 	`
 	
@@ -230,7 +232,7 @@ func (d *Database) GetMatrixByHash(hash string) (*MatrixRecord, error) {
 	SELECT id, title, group_name, matrix_binary, matrix_hex, ham_xor_count, smallest_xor,
 	       boyar_xor_count, boyar_depth, boyar_program,
 	       paar_xor_count, paar_program, slp_xor_count, slp_program,
-	       matrix_hash, created_at, updated_at
+	       matrix_hash, inverse_matrix_id, inverse_matrix_hash, created_at, updated_at
 	FROM matrix_records WHERE matrix_hash = $1
 	`
 	
@@ -318,7 +320,7 @@ func (d *Database) GetMatrices(page, limit int, titleFilter string, hamXorMin, h
 	SELECT id, title, group_name, matrix_binary, matrix_hex, ham_xor_count, smallest_xor,
 	       boyar_xor_count, boyar_depth, boyar_program,
 	       paar_xor_count, paar_program, slp_xor_count, slp_program,
-	       matrix_hash, created_at, updated_at
+	       matrix_hash, inverse_matrix_id, inverse_matrix_hash, created_at, updated_at
 	FROM matrix_records %s
 	ORDER BY COALESCE(smallest_xor, ham_xor_count) ASC, created_at DESC
 	LIMIT $%d OFFSET $%d
@@ -348,8 +350,8 @@ func (d *Database) GetMatrices(page, limit int, titleFilter string, hamXorMin, h
 func (d *Database) scanMatrixRecord(scanner interface{}) (*MatrixRecord, error) {
 	var record MatrixRecord
 	var groupName sql.NullString
-	var smallestXor, boyarXor, boyarDepth, paarXor, slpXor sql.NullInt64
-	var boyarProgram, paarProgram, slpProgram sql.NullString
+	var smallestXor, boyarXor, boyarDepth, paarXor, slpXor, inverseMatrixID sql.NullInt64
+	var boyarProgram, paarProgram, slpProgram, inverseMatrixHash sql.NullString
 
 	var err error
 	switch s := scanner.(type) {
@@ -357,12 +359,12 @@ func (d *Database) scanMatrixRecord(scanner interface{}) (*MatrixRecord, error) 
 		err = s.Scan(&record.ID, &record.Title, &groupName, &record.MatrixBinary, &record.MatrixHex,
 			&record.HamXorCount, &smallestXor, &boyarXor, &boyarDepth, &boyarProgram,
 			&paarXor, &paarProgram, &slpXor, &slpProgram,
-			&record.MatrixHash, &record.CreatedAt, &record.UpdatedAt)
+			&record.MatrixHash, &inverseMatrixID, &inverseMatrixHash, &record.CreatedAt, &record.UpdatedAt)
 	case *sql.Rows:
 		err = s.Scan(&record.ID, &record.Title, &groupName, &record.MatrixBinary, &record.MatrixHex,
 			&record.HamXorCount, &smallestXor, &boyarXor, &boyarDepth, &boyarProgram,
 			&paarXor, &paarProgram, &slpXor, &slpProgram,
-			&record.MatrixHash, &record.CreatedAt, &record.UpdatedAt)
+			&record.MatrixHash, &inverseMatrixID, &inverseMatrixHash, &record.CreatedAt, &record.UpdatedAt)
 	default:
 		return nil, fmt.Errorf("unsupported scanner type")
 	}
@@ -404,6 +406,13 @@ func (d *Database) scanMatrixRecord(scanner interface{}) (*MatrixRecord, error) 
 	if slpProgram.Valid {
 		record.SlpProgram = &slpProgram.String
 	}
+	if inverseMatrixID.Valid {
+		val := int(inverseMatrixID.Int64)
+		record.InverseMatrixID = &val
+	}
+	if inverseMatrixHash.Valid {
+		record.InverseMatrixHash = &inverseMatrixHash.String
+	}
 
 	return &record, nil
 }
@@ -422,42 +431,55 @@ func (d *Database) GetMatrixCount() (int, error) {
 
 // ImportMatricesFromFiles imports matrices from the matrices-data directory
 func (d *Database) ImportMatricesFromFiles(dataPath string) error {
-	log.Printf("Matrices-data klasöründen matrisler import ediliyor: %s", dataPath)
+	importStartTime := time.Now()
+	log.Printf("🚀 [IMPORT] Matrices-data klasöründen matrisler import ediliyor: %s", dataPath)
 	
 	// Get list of .txt files in the directory
+	fileListStartTime := time.Now()
 	files, err := filepath.Glob(filepath.Join(dataPath, "*.txt"))
+	fileListDuration := time.Since(fileListStartTime)
+	log.Printf("📁 [IMPORT] Dosya listesi alındı (%v): %d dosya bulundu", fileListDuration, len(files))
+	
 	if err != nil {
 		return fmt.Errorf("dosya listesi alınamadı: %v", err)
 	}
 
 	if len(files) == 0 {
-		log.Printf("Matrices-data klasöründe .txt dosyası bulunamadı")
+		log.Printf("⚠️  [IMPORT] Matrices-data klasöründe .txt dosyası bulunamadı")
 		return nil
 	}
 
-	log.Printf("%d dosya bulundu, import işlemi başlıyor...", len(files))
+	log.Printf("📋 [IMPORT] %d dosya bulundu, import işlemi başlıyor...", len(files))
 
 	totalImported := 0
-	for _, filePath := range files {
+	for i, filePath := range files {
 		fileName := filepath.Base(filePath)
-		log.Printf("Dosya işleniyor: %s", fileName)
+		fileStartTime := time.Now()
+		log.Printf("📄 [IMPORT] Dosya işleniyor (%d/%d): %s", i+1, len(files), fileName)
 		
 		count, err := d.importMatricesFromFile(filePath)
+		fileDuration := time.Since(fileStartTime)
+		
 		if err != nil {
-			log.Printf("HATA: %s dosyası işlenirken hata oluştu: %v", fileName, err)
+			log.Printf("❌ [IMPORT] %s dosyası işlenirken hata oluştu (%v): %v", fileName, fileDuration, err)
 			continue
 		}
 		
 		totalImported += count
-		log.Printf("%s dosyasından %d matris import edildi", fileName, count)
+		log.Printf("✅ [IMPORT] %s dosyasından %d matris import edildi (%v)", fileName, count, fileDuration)
 	}
 
-	log.Printf("Import işlemi tamamlandı. Toplam %d matris import edildi.", totalImported)
+	totalImportDuration := time.Since(importStartTime)
+	log.Printf("🎉 [IMPORT] Import işlemi tamamlandı (Toplam süre: %v). Toplam %d matris import edildi.", totalImportDuration, totalImported)
 	return nil
 }
 
 // importMatricesFromFile imports matrices from a single file
 func (d *Database) importMatricesFromFile(filePath string) (int, error) {
+	fileStartTime := time.Now()
+	fileName := filepath.Base(filePath)
+	log.Printf("📖 [FILE] Dosya okunuyor: %s", fileName)
+	
 	file, err := os.Open(filePath)
 	if err != nil {
 		return 0, err
@@ -465,7 +487,6 @@ func (d *Database) importMatricesFromFile(filePath string) (int, error) {
 	defer file.Close()
 
 	// Extract filename without extension as group name
-	fileName := filepath.Base(filePath)
 	groupName := strings.TrimSuffix(fileName, filepath.Ext(fileName))
 
 	scanner := bufio.NewScanner(file)
@@ -473,7 +494,9 @@ func (d *Database) importMatricesFromFile(filePath string) (int, error) {
 	var currentTitle string
 	importedCount := 0
 	lineNumber := 0
+	matrixCount := 0
 
+	parseStartTime := time.Now()
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		lineNumber++
@@ -487,17 +510,22 @@ func (d *Database) importMatricesFromFile(filePath string) (int, error) {
 		if strings.HasPrefix(line, "------------------------------") {
 			// Process current matrix if we have one
 			if len(currentMatrix) > 0 && currentTitle != "" {
+				matrixStartTime := time.Now()
 				err := d.saveMatrixFromImport(currentTitle, currentMatrix, groupName)
+				matrixDuration := time.Since(matrixStartTime)
+				
 				if err != nil {
-					log.Printf("HATA: Matris kaydedilemedi (satır %d): %v", lineNumber, err)
+					log.Printf("❌ [FILE] Matris kaydedilemedi (%v) (satır %d): %v", matrixDuration, lineNumber, err)
 				} else {
 					importedCount++
+					log.Printf("💾 [FILE] Matris kaydedildi (%v): %s", matrixDuration, currentTitle)
 				}
 			}
 			
 			// Reset for next matrix
 			currentMatrix = [][]string{}
 			currentTitle = ""
+			matrixCount++
 			continue
 		}
 
@@ -523,69 +551,115 @@ func (d *Database) importMatricesFromFile(filePath string) (int, error) {
 
 	// Process the last matrix if exists
 	if len(currentMatrix) > 0 && currentTitle != "" {
+		matrixStartTime := time.Now()
 		err := d.saveMatrixFromImport(currentTitle, currentMatrix, groupName)
+		matrixDuration := time.Since(matrixStartTime)
+		
 		if err != nil {
-			log.Printf("HATA: Son matris kaydedilemedi: %v", err)
+			log.Printf("❌ [FILE] Son matris kaydedilemedi (%v): %v", matrixDuration, err)
 		} else {
 			importedCount++
+			log.Printf("💾 [FILE] Son matris kaydedildi (%v): %s", matrixDuration, currentTitle)
 		}
+		matrixCount++
 	}
+
+	parseDuration := time.Since(parseStartTime)
+	totalFileDuration := time.Since(fileStartTime)
 
 	if err := scanner.Err(); err != nil {
 		return importedCount, err
 	}
+
+	log.Printf("📊 [FILE] %s tamamlandı - %d satır okundu, %d matris bulundu, %d matris import edildi (Parse: %v, Toplam: %v)", 
+		fileName, lineNumber, matrixCount, importedCount, parseDuration, totalFileDuration)
 
 	return importedCount, nil
 }
 
 // saveMatrixFromImport saves a matrix during import process
 func (d *Database) saveMatrixFromImport(title string, matrix [][]string, group string) error {
+	startTime := time.Now()
+	log.Printf("📊 [IMPORT] Matris işleme başlıyor: %s", title)
+	
 	// Check if matrix already exists by hash
+	hashStartTime := time.Now()
 	matrixHash := calculateMatrixHash(matrix)
 	existing, err := d.GetMatrixByHash(matrixHash)
+	hashDuration := time.Since(hashStartTime)
+	log.Printf("⏱️  [IMPORT] Hash kontrolü tamamlandı (%v): %s", hashDuration, title)
+	
 	if err == nil && existing != nil {
 		// Matrix already exists, skip
+		log.Printf("⏭️  [IMPORT] Matris zaten mevcut, atlanıyor: %s", title)
 		return nil
 	}
 
 	// Save the matrix
+	saveStartTime := time.Now()
 	savedMatrix, err := d.SaveMatrix(title, matrix, group)
+	saveDuration := time.Since(saveStartTime)
+	log.Printf("💾 [IMPORT] Matris veritabanına kaydedildi (%v): %s", saveDuration, title)
+	
 	if err != nil {
 		return err
 	}
 
 	// Calculate algorithms for the newly saved matrix
-	log.Printf("Yeni matris için algoritmaları hesaplanıyor: %s", title)
+	log.Printf("🧮 [IMPORT] Algoritma hesaplamaları başlıyor: %s", title)
 	
 	// Run algorithms in background
 	go func() {
+		algorithmStartTime := time.Now()
+		
 		// Calculate Boyar SLP
+		boyarStartTime := time.Now()
 		boyarResult, err := runBoyarSLP(matrix)
+		boyarDuration := time.Since(boyarStartTime)
 		if err != nil {
-			log.Printf("HATA: %s için Boyar SLP hesaplanamadı: %v", title, err)
+			log.Printf("❌ [BOYAR] %s için Boyar SLP hesaplanamadı (%v): %v", title, boyarDuration, err)
+		} else {
+			log.Printf("✅ [BOYAR] %s için Boyar SLP tamamlandı (%v) - XOR: %d", title, boyarDuration, boyarResult.XorCount)
 		}
 
 		// Calculate Paar Algorithm
+		paarStartTime := time.Now()
 		paarResult, err := runPaarAlgorithm(matrix)
+		paarDuration := time.Since(paarStartTime)
 		if err != nil {
-			log.Printf("HATA: %s için Paar algoritması hesaplanamadı: %v", title, err)
+			log.Printf("❌ [PAAR] %s için Paar algoritması hesaplanamadı (%v): %v", title, paarDuration, err)
+		} else {
+			log.Printf("✅ [PAAR] %s için Paar algoritması tamamlandı (%v) - XOR: %d", title, paarDuration, paarResult.XorCount)
 		}
 
 		// Calculate SLP Heuristic
+		slpStartTime := time.Now()
 		slpResult, err := runSLPHeuristic(matrix)
+		slpDuration := time.Since(slpStartTime)
 		if err != nil {
-			log.Printf("HATA: %s için SLP Heuristic hesaplanamadı: %v", title, err)
+			log.Printf("❌ [SLP] %s için SLP Heuristic hesaplanamadı (%v): %v", title, slpDuration, err)
+		} else {
+			log.Printf("✅ [SLP] %s için SLP Heuristic tamamlandı (%v) - XOR: %d", title, slpDuration, slpResult.XorCount)
 		}
 
 		// Update matrix with results
+		updateStartTime := time.Now()
 		err = d.UpdateMatrixResults(savedMatrix.ID, boyarResult, paarResult, slpResult)
+		updateDuration := time.Since(updateStartTime)
+		
+		totalAlgorithmDuration := time.Since(algorithmStartTime)
+		
 		if err != nil {
-			log.Printf("HATA: %s için sonuçlar kaydedilemedi: %v", title, err)
+			log.Printf("❌ [UPDATE] %s için sonuçlar kaydedilemedi (%v): %v", title, updateDuration, err)
 		} else {
-			log.Printf("✓ %s için tüm algoritmalar başarıyla hesaplandı", title)
+			log.Printf("✅ [UPDATE] %s için sonuçlar kaydedildi (%v)", title, updateDuration)
+			log.Printf("🎯 [TOPLAM] %s için tüm algoritmalar tamamlandı (Toplam: %v, Boyar: %v, Paar: %v, SLP: %v)", 
+				title, totalAlgorithmDuration, boyarDuration, paarDuration, slpDuration)
 		}
 	}()
 
+	totalDuration := time.Since(startTime)
+	log.Printf("📈 [IMPORT] Matris işleme tamamlandı (%v): %s", totalDuration, title)
 	return nil
 }
 
@@ -815,6 +889,22 @@ func createTables(database *sql.DB) error {
 			ALTER TABLE matrix_records ADD COLUMN smallest_xor INTEGER;
 		END IF;
 	END $$;
+
+	-- Add inverse_matrix_id column if it doesn't exist
+	DO $$ 
+	BEGIN 
+		IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='matrix_records' AND column_name='inverse_matrix_id') THEN
+			ALTER TABLE matrix_records ADD COLUMN inverse_matrix_id INTEGER;
+		END IF;
+	END $$;
+
+	-- Add inverse_matrix_hash column if it doesn't exist
+	DO $$ 
+	BEGIN 
+		IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='matrix_records' AND column_name='inverse_matrix_hash') THEN
+			ALTER TABLE matrix_records ADD COLUMN inverse_matrix_hash VARCHAR(32);
+		END IF;
+	END $$;
 	`
 
 	_, err := database.Exec(migrationSQL)
@@ -840,6 +930,8 @@ func createTables(database *sql.DB) error {
 		slp_xor_count INTEGER,
 		slp_program TEXT,
 		matrix_hash VARCHAR(32) NOT NULL UNIQUE,
+		inverse_matrix_id INTEGER,
+		inverse_matrix_hash VARCHAR(32),
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);
@@ -853,6 +945,8 @@ func createTables(database *sql.DB) error {
 	CREATE INDEX IF NOT EXISTS idx_matrix_records_boyar_xor ON matrix_records(boyar_xor_count);
 	CREATE INDEX IF NOT EXISTS idx_matrix_records_paar_xor ON matrix_records(paar_xor_count);
 	CREATE INDEX IF NOT EXISTS idx_matrix_records_slp_xor ON matrix_records(slp_xor_count);
+	CREATE INDEX IF NOT EXISTS idx_matrix_records_inverse_id ON matrix_records(inverse_matrix_id);
+	CREATE INDEX IF NOT EXISTS idx_matrix_records_inverse_hash ON matrix_records(inverse_matrix_hash);
 	CREATE INDEX IF NOT EXISTS idx_matrix_records_created_at ON matrix_records(created_at);
 	`
 
@@ -958,6 +1052,9 @@ func InitDatabase(config *Config) error {
 		go func() {
 			time.Sleep(5 * time.Second) // Wait a bit for the application to fully start
 			
+			autoImportStartTime := time.Now()
+			log.Printf("🔄 [AUTO-IMPORT] Otomatik import işlemi başlıyor...")
+			
 			dataPath := config.Import.DataDirectory
 			if dataPath == "" {
 				dataPath = "./matrices-data"
@@ -968,42 +1065,58 @@ func InitDatabase(config *Config) error {
 				dataPath = envPath
 			}
 
-			log.Printf("Config'e göre otomatik import başlatılıyor: %s", dataPath)
+			log.Printf("📂 [AUTO-IMPORT] Config'e göre otomatik import başlatılıyor: %s", dataPath)
 
 			// Get hashes from database
+			dbHashStartTime := time.Now()
 			dbHashes, err := db.GetAllMatrixHashes()
+			dbHashDuration := time.Since(dbHashStartTime)
 			if err != nil {
-				log.Printf("HATA: Veritabanı hash'leri alınamadı: %v", err)
+				log.Printf("❌ [AUTO-IMPORT] Veritabanı hash'leri alınamadı (%v): %v", dbHashDuration, err)
 				return
 			}
+			log.Printf("🗄️  [AUTO-IMPORT] Veritabanı hash'leri alındı (%v): %d hash", dbHashDuration, len(dbHashes))
 
 			// Get hashes from files
+			fileHashStartTime := time.Now()
 			fileHashes, err := db.GetFileMatrixHashes(dataPath)
+			fileHashDuration := time.Since(fileHashStartTime)
 			if err != nil {
-				log.Printf("HATA: Dosya hash'leri alınamadı: %v", err)
+				log.Printf("❌ [AUTO-IMPORT] Dosya hash'leri alınamadı (%v): %v", fileHashDuration, err)
 				return
 			}
+			log.Printf("📁 [AUTO-IMPORT] Dosya hash'leri alındı (%v): %d hash", fileHashDuration, len(fileHashes))
 
-			log.Printf("Veritabanında %d matris hash'i bulundu", len(dbHashes))
-			log.Printf("Dosyalarda %d matris hash'i bulundu", len(fileHashes))
+			log.Printf("📊 [AUTO-IMPORT] Veritabanında %d matris hash'i bulundu", len(dbHashes))
+			log.Printf("📊 [AUTO-IMPORT] Dosyalarda %d matris hash'i bulundu", len(fileHashes))
 
 			// Check for missing matrices
+			compareStartTime := time.Now()
 			missingCount := 0
 			for hash := range fileHashes {
 				if !dbHashes[hash] {
 					missingCount++
 				}
 			}
+			compareDuration := time.Since(compareStartTime)
+			log.Printf("🔍 [AUTO-IMPORT] Hash karşılaştırması tamamlandı (%v): %d eksik matris", compareDuration, missingCount)
 
 			if missingCount > 0 {
-				log.Printf("Veritabanında %d eksik matris var, import işlemi başlatılıyor...", missingCount)
+				log.Printf("🚀 [AUTO-IMPORT] Veritabanında %d eksik matris var, import işlemi başlatılıyor...", missingCount)
+				importStartTime := time.Now()
 				err := db.ImportMatricesFromFiles(dataPath)
+				importDuration := time.Since(importStartTime)
 				if err != nil {
-					log.Printf("HATA: Matris import işlemi başarısız: %v", err)
+					log.Printf("❌ [AUTO-IMPORT] Matris import işlemi başarısız (%v): %v", importDuration, err)
+				} else {
+					log.Printf("✅ [AUTO-IMPORT] Matris import işlemi tamamlandı (%v)", importDuration)
 				}
 			} else {
-				log.Printf("Tüm matrisler zaten veritabanında mevcut")
+				log.Printf("✅ [AUTO-IMPORT] Tüm matrisler zaten veritabanında mevcut")
 			}
+			
+			totalAutoImportDuration := time.Since(autoImportStartTime)
+			log.Printf("🎯 [AUTO-IMPORT] Otomatik import işlemi tamamlandı (Toplam süre: %v)", totalAutoImportDuration)
 		}()
 	} else {
 		log.Printf("Otomatik import devre dışı (enabled: %v, process_on_start: %v)", 
@@ -1078,4 +1191,208 @@ func CalculateAndSaveAlgorithm(matrixID int, matrix Matrix, algorithm string) er
 	}
 
 	return db.UpdateMatrixResults(matrixID, boyarResult, paarResult, slpResult)
+}
+
+// calculateMatrixInverse calculates the inverse of a binary matrix using Gaussian elimination
+func calculateMatrixInverse(matrix Matrix) (Matrix, error) {
+	n := len(matrix)
+	if n == 0 {
+		return nil, fmt.Errorf("matris boş")
+	}
+	
+	// Check if matrix is square
+	if len(matrix[0]) != n {
+		return nil, fmt.Errorf("matris kare değil: %dx%d", n, len(matrix[0]))
+	}
+	
+	// Create augmented matrix [A|I]
+	augmented := make([][]int, n)
+	for i := 0; i < n; i++ {
+		augmented[i] = make([]int, 2*n)
+		// Copy original matrix
+		for j := 0; j < n; j++ {
+			val, err := strconv.Atoi(strings.TrimSpace(matrix[i][j]))
+			if err != nil {
+				return nil, fmt.Errorf("geçersiz matris değeri: %s", matrix[i][j])
+			}
+			augmented[i][j] = val
+		}
+		// Add identity matrix
+		for j := n; j < 2*n; j++ {
+			if j-n == i {
+				augmented[i][j] = 1
+			} else {
+				augmented[i][j] = 0
+			}
+		}
+	}
+	
+	// Gaussian elimination in GF(2)
+	for i := 0; i < n; i++ {
+		// Find pivot
+		pivotRow := -1
+		for k := i; k < n; k++ {
+			if augmented[k][i] == 1 {
+				pivotRow = k
+				break
+			}
+		}
+		
+		if pivotRow == -1 {
+			return nil, fmt.Errorf("matris tersi alınamaz (determinant = 0)")
+		}
+		
+		// Swap rows if needed
+		if pivotRow != i {
+			augmented[i], augmented[pivotRow] = augmented[pivotRow], augmented[i]
+		}
+		
+		// Eliminate column
+		for k := 0; k < n; k++ {
+			if k != i && augmented[k][i] == 1 {
+				for j := 0; j < 2*n; j++ {
+					augmented[k][j] ^= augmented[i][j] // XOR operation in GF(2)
+				}
+			}
+		}
+	}
+	
+	// Extract inverse matrix from right side of augmented matrix
+	inverse := make(Matrix, n)
+	for i := 0; i < n; i++ {
+		inverse[i] = make([]string, n)
+		for j := 0; j < n; j++ {
+			inverse[i][j] = strconv.Itoa(augmented[i][j+n])
+		}
+	}
+	
+	return inverse, nil
+}
+
+// SaveMatrixInverse calculates and saves the inverse of a matrix
+func (d *Database) SaveMatrixInverse(originalID int) (*MatrixRecord, error) {
+	// Get original matrix
+	original, err := d.GetMatrixByID(originalID)
+	if err != nil {
+		return nil, fmt.Errorf("orijinal matris alınamadı: %v", err)
+	}
+	
+	if original == nil {
+		return nil, fmt.Errorf("orijinal matris bulunamadı")
+	}
+	
+	// Check if inverse already exists
+	if original.InverseMatrixID != nil {
+		// Return existing inverse
+		return d.GetMatrixByID(*original.InverseMatrixID)
+	}
+	
+	// Parse matrix from binary string
+	matrix, err := parseMatrixFromBinary(original.MatrixBinary)
+	if err != nil {
+		return nil, fmt.Errorf("matris parse edilemedi: %v", err)
+	}
+	
+	// Calculate inverse
+	inverse, err := calculateMatrixInverse(matrix)
+	if err != nil {
+		return nil, fmt.Errorf("ters matris hesaplanamadı: %v", err)
+	}
+	
+	// Create title for inverse matrix
+	inverseTitle := original.Title + " (Ters)"
+	
+	// Check if inverse already exists by hash
+	inverseHash := calculateMatrixHash(inverse)
+	existing, err := d.GetMatrixByHash(inverseHash)
+	if err == nil && existing != nil {
+		// Update original matrix with inverse reference
+		err = d.updateMatrixInverseReference(originalID, existing.ID, inverseHash)
+		if err != nil {
+			log.Printf("❌ Orijinal matrise ters matris referansı eklenemedi: %v", err)
+		}
+		return existing, nil
+	}
+	
+	// Save inverse matrix
+	inverseRecord, err := d.SaveMatrix(inverseTitle, inverse, original.Group)
+	if err != nil {
+		return nil, fmt.Errorf("ters matris kaydedilemedi: %v", err)
+	}
+	
+	// Update original matrix with inverse reference
+	err = d.updateMatrixInverseReference(originalID, inverseRecord.ID, inverseHash)
+	if err != nil {
+		log.Printf("❌ Orijinal matrise ters matris referansı eklenemedi: %v", err)
+	}
+	
+	// Calculate algorithms for inverse matrix in background
+	go func() {
+		log.Printf("🔄 [INVERSE] %s için algoritma hesaplamaları başlıyor", inverseTitle)
+		
+		// Calculate Boyar SLP
+		boyarResult, err := runBoyarSLP(inverse)
+		if err != nil {
+			log.Printf("❌ [INVERSE-BOYAR] %s için Boyar SLP hesaplanamadı: %v", inverseTitle, err)
+		} else {
+			log.Printf("✅ [INVERSE-BOYAR] %s için Boyar SLP tamamlandı - XOR: %d", inverseTitle, boyarResult.XorCount)
+		}
+
+		// Calculate Paar Algorithm
+		paarResult, err := runPaarAlgorithm(inverse)
+		if err != nil {
+			log.Printf("❌ [INVERSE-PAAR] %s için Paar algoritması hesaplanamadı: %v", inverseTitle, err)
+		} else {
+			log.Printf("✅ [INVERSE-PAAR] %s için Paar algoritması tamamlandı - XOR: %d", inverseTitle, paarResult.XorCount)
+		}
+
+		// Calculate SLP Heuristic
+		slpResult, err := runSLPHeuristic(inverse)
+		if err != nil {
+			log.Printf("❌ [INVERSE-SLP] %s için SLP Heuristic hesaplanamadı: %v", inverseTitle, err)
+		} else {
+			log.Printf("✅ [INVERSE-SLP] %s için SLP Heuristic tamamlandı - XOR: %d", inverseTitle, slpResult.XorCount)
+		}
+
+		// Update matrix with results
+		err = d.UpdateMatrixResults(inverseRecord.ID, boyarResult, paarResult, slpResult)
+		if err != nil {
+			log.Printf("❌ [INVERSE-UPDATE] %s için sonuçlar kaydedilemedi: %v", inverseTitle, err)
+		} else {
+			log.Printf("✅ [INVERSE-UPDATE] %s için sonuçlar kaydedildi", inverseTitle)
+		}
+	}()
+	
+	return inverseRecord, nil
+}
+
+// updateMatrixInverseReference updates the original matrix with inverse reference
+func (d *Database) updateMatrixInverseReference(originalID, inverseID int, inverseHash string) error {
+	query := `
+	UPDATE matrix_records 
+	SET inverse_matrix_id = $1, inverse_matrix_hash = $2, updated_at = CURRENT_TIMESTAMP
+	WHERE id = $3
+	`
+	
+	_, err := d.db.Exec(query, inverseID, inverseHash, originalID)
+	if err != nil {
+		return fmt.Errorf("ters matris referansı güncellenemedi: %v", err)
+	}
+	
+	return nil
+}
+
+// parseMatrixFromBinary parses a matrix from its binary string representation
+func parseMatrixFromBinary(matrixBinary string) (Matrix, error) {
+	lines := strings.Split(strings.TrimSpace(matrixBinary), "\n")
+	matrix := make(Matrix, len(lines))
+	
+	for i, line := range lines {
+		// Remove brackets and split by spaces
+		line = strings.Trim(line, "[]")
+		elements := strings.Fields(line)
+		matrix[i] = elements
+	}
+	
+	return matrix, nil
 } 
