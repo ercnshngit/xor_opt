@@ -32,12 +32,6 @@ document.addEventListener('DOMContentLoaded', function() {
 function loadFromURL() {
     const urlParams = new URLSearchParams(window.location.search);
     
-    // Load page
-    const page = urlParams.get('page');
-    if (page && !isNaN(page) && page > 0) {
-        currentPage = parseInt(page);
-    }
-    
     // Load limit
     const limit = urlParams.get('limit');
     if (limit && !isNaN(limit) && limit > 0) {
@@ -99,11 +93,6 @@ function loadFromURL() {
 // Update URL with current parameters
 function updateURL() {
     const params = new URLSearchParams();
-    
-    // Add page if not 1
-    if (currentPage > 1) {
-        params.set('page', currentPage);
-    }
     
     // Add limit if not default
     if (currentLimit !== 10) {
