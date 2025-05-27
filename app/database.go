@@ -962,6 +962,11 @@ func InitDatabase(config *Config) error {
 			if dataPath == "" {
 				dataPath = "./matrices-data"
 			}
+			
+			// Check for environment variable override
+			if envPath := os.Getenv("MATRICES_DATA_PATH"); envPath != "" {
+				dataPath = envPath
+			}
 
 			log.Printf("Config'e göre otomatik import başlatılıyor: %s", dataPath)
 
