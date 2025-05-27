@@ -682,6 +682,74 @@ func (d *Database) GetMatricesWithoutAlgorithms(limit int) ([]*MatrixRecord, err
 	return matrices, nil
 }
 
+// Algorithm runner functions for import process
+
+// runBoyarSLP runs the Boyar SLP algorithm on a matrix
+func runBoyarSLP(matrix [][]string) (*AlgResult, error) {
+	boyar := NewBoyarSLP(10) // depth limit
+	
+	err := boyar.ReadTargetMatrix(matrix)
+	if err != nil {
+		return nil, err
+	}
+	
+	err = boyar.InitBase()
+	if err != nil {
+		return nil, err
+	}
+	
+	result, err := boyar.Solve(matrix)
+	if err != nil {
+		return nil, err
+	}
+	
+	return &result, nil
+}
+
+// runPaarAlgorithm runs the Paar algorithm on a matrix
+func runPaarAlgorithm(matrix [][]string) (*AlgResult, error) {
+	paar := NewPaarAlgorithm()
+	
+	err := paar.ReadTargetMatrix(matrix)
+	if err != nil {
+		return nil, err
+	}
+	
+	err = paar.InitBase()
+	if err != nil {
+		return nil, err
+	}
+	
+	result, err := paar.Solve(matrix)
+	if err != nil {
+		return nil, err
+	}
+	
+	return &result, nil
+}
+
+// runSLPHeuristic runs the SLP Heuristic algorithm on a matrix
+func runSLPHeuristic(matrix [][]string) (*AlgResult, error) {
+	slp := NewSLPHeuristic()
+	
+	err := slp.ReadTargetMatrix(matrix)
+	if err != nil {
+		return nil, err
+	}
+	
+	err = slp.InitBase()
+	if err != nil {
+		return nil, err
+	}
+	
+	result, err := slp.Solve(matrix)
+	if err != nil {
+		return nil, err
+	}
+	
+	return &result, nil
+}
+
 // Global database instance
 var db *Database
 

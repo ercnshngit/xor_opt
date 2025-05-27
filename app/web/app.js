@@ -16,9 +16,134 @@ let currentFilters = {
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', function() {
+    // Load URL parameters
+    loadFromURL();
     loadMatrices();
     setupEventListeners();
+    
+    // Handle browser back/forward
+    window.addEventListener('popstate', function(event) {
+        loadFromURL();
+        loadMatrices();
+    });
 });
+
+// Load parameters from URL
+function loadFromURL() {
+    const urlParams = new URLSearchParams(window.location.search);
+    
+    // Load page
+    const page = urlParams.get('page');
+    if (page && !isNaN(page) && page > 0) {
+        currentPage = parseInt(page);
+    }
+    
+    // Load limit
+    const limit = urlParams.get('limit');
+    if (limit && !isNaN(limit) && limit > 0) {
+        currentLimit = parseInt(limit);
+        document.getElementById('pageSizeSelect').value = limit;
+    }
+    
+    // Load search filter
+    const search = urlParams.get('search');
+    if (search) {
+        currentFilter = search;
+        document.getElementById('searchInput').value = search;
+    }
+    
+    // Load range filters
+    const hamXorMin = urlParams.get('hamXorMin');
+    const hamXorMax = urlParams.get('hamXorMax');
+    const boyarXorMin = urlParams.get('boyarXorMin');
+    const boyarXorMax = urlParams.get('boyarXorMax');
+    const paarXorMin = urlParams.get('paarXorMin');
+    const paarXorMax = urlParams.get('paarXorMax');
+    const slpXorMin = urlParams.get('slpXorMin');
+    const slpXorMax = urlParams.get('slpXorMax');
+    
+    if (hamXorMin) {
+        currentFilters.hamXorMin = parseInt(hamXorMin);
+        document.getElementById('hamXorMin').value = hamXorMin;
+    }
+    if (hamXorMax) {
+        currentFilters.hamXorMax = parseInt(hamXorMax);
+        document.getElementById('hamXorMax').value = hamXorMax;
+    }
+    if (boyarXorMin) {
+        currentFilters.boyarXorMin = parseInt(boyarXorMin);
+        document.getElementById('boyarXorMin').value = boyarXorMin;
+    }
+    if (boyarXorMax) {
+        currentFilters.boyarXorMax = parseInt(boyarXorMax);
+        document.getElementById('boyarXorMax').value = boyarXorMax;
+    }
+    if (paarXorMin) {
+        currentFilters.paarXorMin = parseInt(paarXorMin);
+        document.getElementById('paarXorMin').value = paarXorMin;
+    }
+    if (paarXorMax) {
+        currentFilters.paarXorMax = parseInt(paarXorMax);
+        document.getElementById('paarXorMax').value = paarXorMax;
+    }
+    if (slpXorMin) {
+        currentFilters.slpXorMin = parseInt(slpXorMin);
+        document.getElementById('slpXorMin').value = slpXorMin;
+    }
+    if (slpXorMax) {
+        currentFilters.slpXorMax = parseInt(slpXorMax);
+        document.getElementById('slpXorMax').value = slpXorMax;
+    }
+}
+
+// Update URL with current parameters
+function updateURL() {
+    const params = new URLSearchParams();
+    
+    // Add page if not 1
+    if (currentPage > 1) {
+        params.set('page', currentPage);
+    }
+    
+    // Add limit if not default
+    if (currentLimit !== 10) {
+        params.set('limit', currentLimit);
+    }
+    
+    // Add search filter
+    if (currentFilter) {
+        params.set('search', currentFilter);
+    }
+    
+    // Add range filters
+    if (currentFilters.hamXorMin !== null) {
+        params.set('hamXorMin', currentFilters.hamXorMin);
+    }
+    if (currentFilters.hamXorMax !== null) {
+        params.set('hamXorMax', currentFilters.hamXorMax);
+    }
+    if (currentFilters.boyarXorMin !== null) {
+        params.set('boyarXorMin', currentFilters.boyarXorMin);
+    }
+    if (currentFilters.boyarXorMax !== null) {
+        params.set('boyarXorMax', currentFilters.boyarXorMax);
+    }
+    if (currentFilters.paarXorMin !== null) {
+        params.set('paarXorMin', currentFilters.paarXorMin);
+    }
+    if (currentFilters.paarXorMax !== null) {
+        params.set('paarXorMax', currentFilters.paarXorMax);
+    }
+    if (currentFilters.slpXorMin !== null) {
+        params.set('slpXorMin', currentFilters.slpXorMin);
+    }
+    if (currentFilters.slpXorMax !== null) {
+        params.set('slpXorMax', currentFilters.slpXorMax);
+    }
+    
+    const newURL = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+    window.history.pushState({}, '', newURL);
+}
 
 // Setup event listeners
 function setupEventListeners() {
@@ -29,7 +154,7 @@ function setupEventListeners() {
         clearTimeout(searchTimeout);
         searchTimeout = setTimeout(() => {
             currentFilter = this.value;
-            currentPage = 1;
+            currentPage = 1; // Reset to first page when searching
             loadMatrices();
         }, 500);
     });
@@ -56,6 +181,13 @@ function setupEventListeners() {
     // Recalculate button
     document.getElementById('recalculateBtn').addEventListener('click', function() {
         recalculateMatrix();
+    });
+
+    // Page size selector
+    document.getElementById('pageSizeSelect').addEventListener('change', function() {
+        currentLimit = parseInt(this.value);
+        currentPage = 1; // Reset to first page when changing page size
+        loadMatrices();
     });
 }
 
@@ -108,6 +240,9 @@ async function loadMatrices() {
 
         displayMatrices(data.matrices);
         setupPagination(data.page, data.total_pages, data.total);
+        
+        // Update URL with current parameters
+        updateURL();
         
     } catch (error) {
         console.error('Error loading matrices:', error);
@@ -198,6 +333,7 @@ function displayMatrices(matrices) {
 function setupPagination(currentPage, totalPages, totalItems) {
     const container = document.getElementById('paginationContainer');
     const pagination = document.getElementById('pagination');
+    const paginationInfo = document.getElementById('paginationInfo');
     
     if (totalPages <= 1) {
         container.style.display = 'none';
@@ -205,6 +341,11 @@ function setupPagination(currentPage, totalPages, totalItems) {
     }
     
     container.style.display = 'block';
+    
+    // Update pagination info
+    const startItem = (currentPage - 1) * currentLimit + 1;
+    const endItem = Math.min(currentPage * currentLimit, totalItems);
+    paginationInfo.textContent = `${startItem}-${endItem} / ${totalItems} matris gösteriliyor (Sayfa ${currentPage}/${totalPages})`;
     
     let html = '';
     
