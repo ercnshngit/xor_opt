@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -28,6 +30,19 @@ type GetMatricesResponse struct {
 type RecalculateRequest struct {
 	MatrixID   int      `json:"matrix_id"`
 	Algorithms []string `json:"algorithms"` // ["boyar", "paar", "slp"]
+}
+
+// BulkRecalculateRequest represents the request to recalculate algorithms for multiple matrices
+type BulkRecalculateRequest struct {
+	Algorithms []string `json:"algorithms"` // ["boyar", "paar", "slp"]
+	Limit      int      `json:"limit"`      // Maximum number of matrices to process
+}
+
+// BulkRecalculateResponse represents the response for bulk recalculation
+type BulkRecalculateResponse struct {
+	ProcessedCount int `json:"processed_count"`
+	TotalCount     int `json:"total_count"`
+	Message        string `json:"message"`
 }
 
 // saveMatrixHandler saves a matrix to the database
@@ -340,4 +355,101 @@ func processAndSaveMatrixHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(updatedRecord)
+}
+
+// bulkRecalculateHandler recalculates algorithms for matrices without algorithm results
+func bulkRecalculateHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var req BulkRecalculateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Geçersiz JSON formatı", http.StatusBadRequest)
+		return
+	}
+
+	// Default algorithms if not specified
+	if len(req.Algorithms) == 0 {
+		req.Algorithms = []string{"boyar", "paar", "slp"}
+	}
+
+	// Default limit if not specified
+	if req.Limit <= 0 {
+		req.Limit = 100
+	}
+
+	// Get matrices without algorithm results
+	matrices, err := db.GetMatricesWithoutAlgorithms(req.Limit)
+	if err != nil {
+		http.Error(w, "Matrisler alınamadı: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if len(matrices) == 0 {
+		response := BulkRecalculateResponse{
+			ProcessedCount: 0,
+			TotalCount:     0,
+			Message:        "Algoritma hesaplanacak matris bulunamadı",
+		}
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Process matrices in background
+	go func() {
+		for i, matrix := range matrices {
+			log.Printf("Toplu hesaplama: Matris %d/%d (ID: %d) işleniyor...", i+1, len(matrices), matrix.ID)
+			
+			// Parse matrix from binary string
+			matrixData, err := parseMatrixFromBinary(matrix.MatrixBinary)
+			if err != nil {
+				log.Printf("Matris parse hatası (ID %d): %v", matrix.ID, err)
+				continue
+			}
+
+			var boyarResult, paarResult, slpResult *AlgResult
+
+			// Run requested algorithms
+			for _, algorithm := range req.Algorithms {
+				switch strings.ToLower(algorithm) {
+				case "boyar":
+					boyar := NewBoyarSLP(10)
+					if result, err := boyar.Solve(matrixData); err == nil {
+						boyarResult = &result
+					} else {
+						log.Printf("Boyar algoritması hatası (ID %d): %v", matrix.ID, err)
+					}
+				case "paar":
+					paar := NewPaarAlgorithm()
+					if result, err := paar.Solve(matrixData); err == nil {
+						paarResult = &result
+					} else {
+						log.Printf("Paar algoritması hatası (ID %d): %v", matrix.ID, err)
+					}
+				case "slp":
+					slp := NewSLPHeuristic()
+					if result, err := slp.Solve(matrixData); err == nil {
+						slpResult = &result
+					} else {
+						log.Printf("SLP algoritması hatası (ID %d): %v", matrix.ID, err)
+					}
+				}
+			}
+
+			// Update database with results
+			err = db.UpdateMatrixResults(matrix.ID, boyarResult, paarResult, slpResult)
+			if err != nil {
+				log.Printf("Algoritma sonuçları güncellenemedi (ID %d): %v", matrix.ID, err)
+			} else {
+				log.Printf("Matris %d algoritmaları tamamlandı", matrix.ID)
+			}
+		}
+		log.Printf("Toplu algoritma hesaplama tamamlandı: %d matris işlendi", len(matrices))
+	}()
+
+	response := BulkRecalculateResponse{
+		ProcessedCount: 0,
+		TotalCount:     len(matrices),
+		Message:        fmt.Sprintf("%d matris için algoritma hesaplama başlatıldı", len(matrices)),
+	}
+	json.NewEncoder(w).Encode(response)
 } 

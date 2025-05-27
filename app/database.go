@@ -615,6 +615,37 @@ func (d *Database) getMatrixHashesFromFile(filePath string) (map[string]bool, er
 	return hashes, scanner.Err()
 }
 
+// GetMatricesWithoutAlgorithms returns matrices that don't have algorithm results
+func (d *Database) GetMatricesWithoutAlgorithms(limit int) ([]*MatrixRecord, error) {
+	query := `
+	SELECT id, title, matrix_binary, matrix_hex, ham_xor_count, 
+	       boyar_xor_count, boyar_depth, boyar_program,
+	       paar_xor_count, paar_program, slp_xor_count, slp_program,
+	       matrix_hash, created_at, updated_at
+	FROM matrix_records 
+	WHERE (boyar_xor_count IS NULL OR paar_xor_count IS NULL OR slp_xor_count IS NULL)
+	ORDER BY created_at ASC
+	LIMIT $1
+	`
+	
+	rows, err := d.db.Query(query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var matrices []*MatrixRecord
+	for rows.Next() {
+		matrix, err := d.scanMatrixRecord(rows)
+		if err != nil {
+			return nil, err
+		}
+		matrices = append(matrices, matrix)
+	}
+
+	return matrices, nil
+}
+
 // Global database instance
 var db *Database
 

@@ -1147,6 +1147,7 @@ func main() {
 	r.HandleFunc("/api/matrices/{id:[0-9]+}", getMatrixHandler).Methods("GET")
 	r.HandleFunc("/api/matrices/process", processAndSaveMatrixHandler).Methods("POST")
 	r.HandleFunc("/api/matrices/recalculate", recalculateHandler).Methods("POST")
+	r.HandleFunc("/api/matrices/bulk-recalculate", bulkRecalculateHandler).Methods("POST")
 
 	port := ":3000"
 	log.Printf("Server starting on %s", port)
@@ -1160,6 +1161,7 @@ func main() {
 	log.Printf("  GET  /api/matrices/{id} - Get matrix by ID")
 	log.Printf("  POST /api/matrices/process - Process and save matrix")
 	log.Printf("  POST /api/matrices/recalculate - Recalculate algorithms")
+	log.Printf("  POST /api/matrices/bulk-recalculate - Bulk recalculate algorithms")
 	log.Printf("=== Backend hazır, istekleri bekleniyor ===")
 
 	handler := c.Handler(r)
