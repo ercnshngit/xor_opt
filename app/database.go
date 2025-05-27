@@ -21,6 +21,7 @@ import (
 type MatrixRecord struct {
 	ID              int       `json:"id"`
 	Title           string    `json:"title"`
+	Group           string    `json:"group"`
 	MatrixBinary    string    `json:"matrix_binary"`
 	MatrixHex       string    `json:"matrix_hex"`
 	HamXorCount     int       `json:"ham_xor_count"`
@@ -31,6 +32,7 @@ type MatrixRecord struct {
 	PaarProgram     *string   `json:"paar_program,omitempty"`
 	SlpXorCount     *int      `json:"slp_xor_count,omitempty"`
 	SlpProgram      *string   `json:"slp_program,omitempty"`
+	SmallestXor     *int      `json:"smallest_xor,omitempty"`
 	MatrixHash      string    `json:"matrix_hash"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
@@ -104,11 +106,15 @@ func calculateHammingXOR(matrix Matrix) int {
 			}
 		}
 	}
+	// Ham XOR = toplam 1'ler - sütun sayısı
+	if len(matrix) > 0 {
+		count -= len(matrix[0])
+	}
 	return count
 }
 
 // SaveMatrix saves a matrix to the database
-func (d *Database) SaveMatrix(title string, matrix Matrix) (*MatrixRecord, error) {
+func (d *Database) SaveMatrix(title string, matrix Matrix, group string) (*MatrixRecord, error) {
 	matrixHash := calculateMatrixHash(matrix)
 	
 	// Check if matrix already exists
@@ -122,13 +128,13 @@ func (d *Database) SaveMatrix(title string, matrix Matrix) (*MatrixRecord, error
 	hamXorCount := calculateHammingXOR(matrix)
 
 	query := `
-	INSERT INTO matrix_records (title, matrix_binary, matrix_hex, ham_xor_count, matrix_hash)
-	VALUES ($1, $2, $3, $4, $5)
+	INSERT INTO matrix_records (title, group_name, matrix_binary, matrix_hex, ham_xor_count, matrix_hash)
+	VALUES ($1, $2, $3, $4, $5, $6)
 	RETURNING id
 	`
 
 	var id int
-	err = d.db.QueryRow(query, title, matrixBinary, matrixHex, hamXorCount, matrixHash).Scan(&id)
+	err = d.db.QueryRow(query, title, group, matrixBinary, matrixHex, hamXorCount, matrixHash).Scan(&id)
 	if err != nil {
 		return nil, err
 	}
@@ -138,13 +144,38 @@ func (d *Database) SaveMatrix(title string, matrix Matrix) (*MatrixRecord, error
 
 // UpdateMatrixResults updates the algorithm results for a matrix
 func (d *Database) UpdateMatrixResults(id int, boyarResult, paarResult, slpResult *AlgResult) error {
+	// Calculate smallest XOR value
+	var smallestXor *int
+	var xorValues []int
+	
+	if boyarResult != nil {
+		xorValues = append(xorValues, boyarResult.XorCount)
+	}
+	if paarResult != nil {
+		xorValues = append(xorValues, paarResult.XorCount)
+	}
+	if slpResult != nil {
+		xorValues = append(xorValues, slpResult.XorCount)
+	}
+	
+	if len(xorValues) > 0 {
+		min := xorValues[0]
+		for _, val := range xorValues {
+			if val < min {
+				min = val
+			}
+		}
+		smallestXor = &min
+	}
+
 	query := `
 	UPDATE matrix_records 
 	SET boyar_xor_count = $1, boyar_depth = $2, boyar_program = $3,
 	    paar_xor_count = $4, paar_program = $5,
 	    slp_xor_count = $6, slp_program = $7,
+	    smallest_xor = $8,
 	    updated_at = CURRENT_TIMESTAMP
-	WHERE id = $8
+	WHERE id = $9
 	`
 
 	var boyarXor, boyarDepth *int
@@ -175,20 +206,20 @@ func (d *Database) UpdateMatrixResults(id int, boyarResult, paarResult, slpResul
 		slpProgram = &programStr
 	}
 
-	_, err := d.db.Exec(query, boyarXor, boyarDepth, boyarProgram, paarXor, paarProgram, slpXor, slpProgram, id)
+	_, err := d.db.Exec(query, boyarXor, boyarDepth, boyarProgram, paarXor, paarProgram, slpXor, slpProgram, smallestXor, id)
 	return err
 }
 
 // GetMatrixByID retrieves a matrix by its ID
 func (d *Database) GetMatrixByID(id int) (*MatrixRecord, error) {
 	query := `
-	SELECT id, title, matrix_binary, matrix_hex, ham_xor_count,
+	SELECT id, title, group_name, matrix_binary, matrix_hex, ham_xor_count, smallest_xor,
 	       boyar_xor_count, boyar_depth, boyar_program,
 	       paar_xor_count, paar_program, slp_xor_count, slp_program,
 	       matrix_hash, created_at, updated_at
 	FROM matrix_records WHERE id = $1
 	`
-
+	
 	row := d.db.QueryRow(query, id)
 	return d.scanMatrixRecord(row)
 }
@@ -196,13 +227,13 @@ func (d *Database) GetMatrixByID(id int) (*MatrixRecord, error) {
 // GetMatrixByHash retrieves a matrix by its hash
 func (d *Database) GetMatrixByHash(hash string) (*MatrixRecord, error) {
 	query := `
-	SELECT id, title, matrix_binary, matrix_hex, ham_xor_count,
+	SELECT id, title, group_name, matrix_binary, matrix_hex, ham_xor_count, smallest_xor,
 	       boyar_xor_count, boyar_depth, boyar_program,
 	       paar_xor_count, paar_program, slp_xor_count, slp_program,
 	       matrix_hash, created_at, updated_at
 	FROM matrix_records WHERE matrix_hash = $1
 	`
-
+	
 	row := d.db.QueryRow(query, hash)
 	return d.scanMatrixRecord(row)
 }
@@ -284,12 +315,12 @@ func (d *Database) GetMatrices(page, limit int, titleFilter string, hamXorMin, h
 	// Get paginated records
 	offset := (page - 1) * limit
 	query := fmt.Sprintf(`
-	SELECT id, title, matrix_binary, matrix_hex, ham_xor_count,
+	SELECT id, title, group_name, matrix_binary, matrix_hex, ham_xor_count, smallest_xor,
 	       boyar_xor_count, boyar_depth, boyar_program,
 	       paar_xor_count, paar_program, slp_xor_count, slp_program,
 	       matrix_hash, created_at, updated_at
 	FROM matrix_records %s
-	ORDER BY created_at DESC
+	ORDER BY COALESCE(smallest_xor, ham_xor_count) ASC, created_at DESC
 	LIMIT $%d OFFSET $%d
 	`, whereClause, argIndex, argIndex+1)
 
@@ -316,19 +347,20 @@ func (d *Database) GetMatrices(page, limit int, titleFilter string, hamXorMin, h
 // scanMatrixRecord scans a row into a MatrixRecord
 func (d *Database) scanMatrixRecord(scanner interface{}) (*MatrixRecord, error) {
 	var record MatrixRecord
-	var boyarXor, boyarDepth, paarXor, slpXor sql.NullInt64
+	var groupName sql.NullString
+	var smallestXor, boyarXor, boyarDepth, paarXor, slpXor sql.NullInt64
 	var boyarProgram, paarProgram, slpProgram sql.NullString
 
 	var err error
 	switch s := scanner.(type) {
 	case *sql.Row:
-		err = s.Scan(&record.ID, &record.Title, &record.MatrixBinary, &record.MatrixHex,
-			&record.HamXorCount, &boyarXor, &boyarDepth, &boyarProgram,
+		err = s.Scan(&record.ID, &record.Title, &groupName, &record.MatrixBinary, &record.MatrixHex,
+			&record.HamXorCount, &smallestXor, &boyarXor, &boyarDepth, &boyarProgram,
 			&paarXor, &paarProgram, &slpXor, &slpProgram,
 			&record.MatrixHash, &record.CreatedAt, &record.UpdatedAt)
 	case *sql.Rows:
-		err = s.Scan(&record.ID, &record.Title, &record.MatrixBinary, &record.MatrixHex,
-			&record.HamXorCount, &boyarXor, &boyarDepth, &boyarProgram,
+		err = s.Scan(&record.ID, &record.Title, &groupName, &record.MatrixBinary, &record.MatrixHex,
+			&record.HamXorCount, &smallestXor, &boyarXor, &boyarDepth, &boyarProgram,
 			&paarXor, &paarProgram, &slpXor, &slpProgram,
 			&record.MatrixHash, &record.CreatedAt, &record.UpdatedAt)
 	default:
@@ -340,6 +372,13 @@ func (d *Database) scanMatrixRecord(scanner interface{}) (*MatrixRecord, error) 
 	}
 
 	// Handle nullable fields
+	if groupName.Valid {
+		record.Group = groupName.String
+	}
+	if smallestXor.Valid {
+		val := int(smallestXor.Int64)
+		record.SmallestXor = &val
+	}
 	if boyarXor.Valid {
 		val := int(boyarXor.Int64)
 		record.BoyarXorCount = &val
@@ -425,6 +464,10 @@ func (d *Database) importMatricesFromFile(filePath string) (int, error) {
 	}
 	defer file.Close()
 
+	// Extract filename without extension as group name
+	fileName := filepath.Base(filePath)
+	groupName := strings.TrimSuffix(fileName, filepath.Ext(fileName))
+
 	scanner := bufio.NewScanner(file)
 	var currentMatrix [][]string
 	var currentTitle string
@@ -444,7 +487,7 @@ func (d *Database) importMatricesFromFile(filePath string) (int, error) {
 		if strings.HasPrefix(line, "------------------------------") {
 			// Process current matrix if we have one
 			if len(currentMatrix) > 0 && currentTitle != "" {
-				err := d.saveMatrixFromImport(currentTitle, currentMatrix)
+				err := d.saveMatrixFromImport(currentTitle, currentMatrix, groupName)
 				if err != nil {
 					log.Printf("HATA: Matris kaydedilemedi (satır %d): %v", lineNumber, err)
 				} else {
@@ -480,7 +523,7 @@ func (d *Database) importMatricesFromFile(filePath string) (int, error) {
 
 	// Process the last matrix if exists
 	if len(currentMatrix) > 0 && currentTitle != "" {
-		err := d.saveMatrixFromImport(currentTitle, currentMatrix)
+		err := d.saveMatrixFromImport(currentTitle, currentMatrix, groupName)
 		if err != nil {
 			log.Printf("HATA: Son matris kaydedilemedi: %v", err)
 		} else {
@@ -496,7 +539,7 @@ func (d *Database) importMatricesFromFile(filePath string) (int, error) {
 }
 
 // saveMatrixFromImport saves a matrix during import process
-func (d *Database) saveMatrixFromImport(title string, matrix [][]string) error {
+func (d *Database) saveMatrixFromImport(title string, matrix [][]string, group string) error {
 	// Check if matrix already exists by hash
 	matrixHash := calculateMatrixHash(matrix)
 	existing, err := d.GetMatrixByHash(matrixHash)
@@ -506,7 +549,7 @@ func (d *Database) saveMatrixFromImport(title string, matrix [][]string) error {
 	}
 
 	// Save the matrix
-	savedMatrix, err := d.SaveMatrix(title, matrix)
+	savedMatrix, err := d.SaveMatrix(title, matrix, group)
 	if err != nil {
 		return err
 	}
@@ -755,14 +798,40 @@ var db *Database
 
 // createTables creates the necessary database tables
 func createTables(database *sql.DB) error {
+	// First, try to add new columns if they don't exist
+	migrationSQL := `
+	-- Add group_name column if it doesn't exist
+	DO $$ 
+	BEGIN 
+		IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='matrix_records' AND column_name='group_name') THEN
+			ALTER TABLE matrix_records ADD COLUMN group_name VARCHAR(255);
+		END IF;
+	END $$;
+
+	-- Add smallest_xor column if it doesn't exist
+	DO $$ 
+	BEGIN 
+		IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='matrix_records' AND column_name='smallest_xor') THEN
+			ALTER TABLE matrix_records ADD COLUMN smallest_xor INTEGER;
+		END IF;
+	END $$;
+	`
+
+	_, err := database.Exec(migrationSQL)
+	if err != nil {
+		log.Printf("Migration hatası (devam ediliyor): %v", err)
+	}
+
 	createTableSQL := `
 	-- Create matrix_records table
 	CREATE TABLE IF NOT EXISTS matrix_records (
 		id SERIAL PRIMARY KEY,
 		title VARCHAR(255) NOT NULL,
+		group_name VARCHAR(255),
 		matrix_binary TEXT NOT NULL,
 		matrix_hex TEXT NOT NULL,
 		ham_xor_count INTEGER NOT NULL,
+		smallest_xor INTEGER,
 		boyar_xor_count INTEGER,
 		boyar_depth INTEGER,
 		boyar_program TEXT,
@@ -778,24 +847,63 @@ func createTables(database *sql.DB) error {
 	-- Create indexes for better performance
 	CREATE INDEX IF NOT EXISTS idx_matrix_records_hash ON matrix_records(matrix_hash);
 	CREATE INDEX IF NOT EXISTS idx_matrix_records_title ON matrix_records(title);
+	CREATE INDEX IF NOT EXISTS idx_matrix_records_group ON matrix_records(group_name);
 	CREATE INDEX IF NOT EXISTS idx_matrix_records_ham_xor ON matrix_records(ham_xor_count);
+	CREATE INDEX IF NOT EXISTS idx_matrix_records_smallest_xor ON matrix_records(smallest_xor);
 	CREATE INDEX IF NOT EXISTS idx_matrix_records_boyar_xor ON matrix_records(boyar_xor_count);
 	CREATE INDEX IF NOT EXISTS idx_matrix_records_paar_xor ON matrix_records(paar_xor_count);
 	CREATE INDEX IF NOT EXISTS idx_matrix_records_slp_xor ON matrix_records(slp_xor_count);
 	CREATE INDEX IF NOT EXISTS idx_matrix_records_created_at ON matrix_records(created_at);
 	`
 
-	_, err := database.Exec(createTableSQL)
+	_, err = database.Exec(createTableSQL)
 	if err != nil {
 		return fmt.Errorf("tablo oluşturma hatası: %v", err)
 	}
 
 	log.Printf("Veritabanı tabloları başarıyla oluşturuldu/kontrol edildi")
+	
+	// Update smallest_xor for existing records
+	go func() {
+		time.Sleep(2 * time.Second) // Wait for database to be ready
+		updateSmallestXorForExistingRecords(database)
+	}()
+	
 	return nil
 }
 
+// updateSmallestXorForExistingRecords updates smallest_xor for existing records
+func updateSmallestXorForExistingRecords(database *sql.DB) {
+	log.Printf("Mevcut kayıtlar için smallest_xor değerleri güncelleniyor...")
+	
+	query := `
+	UPDATE matrix_records 
+	SET smallest_xor = (
+		SELECT MIN(xor_value) FROM (
+			SELECT COALESCE(boyar_xor_count, 999999) as xor_value
+			UNION ALL
+			SELECT COALESCE(paar_xor_count, 999999) as xor_value
+			UNION ALL
+			SELECT COALESCE(slp_xor_count, 999999) as xor_value
+		) AS xor_values
+		WHERE xor_value < 999999
+	)
+	WHERE smallest_xor IS NULL 
+	AND (boyar_xor_count IS NOT NULL OR paar_xor_count IS NOT NULL OR slp_xor_count IS NOT NULL)
+	`
+	
+	result, err := database.Exec(query)
+	if err != nil {
+		log.Printf("Smallest XOR güncelleme hatası: %v", err)
+		return
+	}
+	
+	rowsAffected, _ := result.RowsAffected()
+	log.Printf("✓ %d kayıt için smallest_xor değeri güncellendi", rowsAffected)
+}
+
 // InitDatabase initializes the database connection
-func InitDatabase() error {
+func InitDatabase(config *Config) error {
 	// Get database connection parameters from environment
 	host := os.Getenv("DB_HOST")
 	if host == "" {
@@ -845,50 +953,124 @@ func InitDatabase() error {
 		return fmt.Errorf("veritabanı tabloları oluşturulamadı: %v", err)
 	}
 
-	// Check if we need to import matrices using hash comparison
-	go func() {
-		time.Sleep(5 * time.Second) // Wait a bit for the application to fully start
-		
-		dataPath := os.Getenv("MATRICES_DATA_PATH")
-		if dataPath == "" {
-			dataPath = "./matrices-data"
-		}
-
-		// Get hashes from database
-		dbHashes, err := db.GetAllMatrixHashes()
-		if err != nil {
-			log.Printf("HATA: Veritabanı hash'leri alınamadı: %v", err)
-			return
-		}
-
-		// Get hashes from files
-		fileHashes, err := db.GetFileMatrixHashes(dataPath)
-		if err != nil {
-			log.Printf("HATA: Dosya hash'leri alınamadı: %v", err)
-			return
-		}
-
-		log.Printf("Veritabanında %d matris hash'i bulundu", len(dbHashes))
-		log.Printf("Dosyalarda %d matris hash'i bulundu", len(fileHashes))
-
-		// Check for missing matrices
-		missingCount := 0
-		for hash := range fileHashes {
-			if !dbHashes[hash] {
-				missingCount++
+	// Check if we need to import matrices using hash comparison (only if enabled in config)
+	if config != nil && config.Import.Enabled && config.Import.ProcessOnStart {
+		go func() {
+			time.Sleep(5 * time.Second) // Wait a bit for the application to fully start
+			
+			dataPath := config.Import.DataDirectory
+			if dataPath == "" {
+				dataPath = "./matrices-data"
 			}
-		}
 
-		if missingCount > 0 {
-			log.Printf("Veritabanında %d eksik matris var, import işlemi başlatılıyor...", missingCount)
-			err := db.ImportMatricesFromFiles(dataPath)
+			log.Printf("Config'e göre otomatik import başlatılıyor: %s", dataPath)
+
+			// Get hashes from database
+			dbHashes, err := db.GetAllMatrixHashes()
 			if err != nil {
-				log.Printf("HATA: Matris import işlemi başarısız: %v", err)
+				log.Printf("HATA: Veritabanı hash'leri alınamadı: %v", err)
+				return
 			}
-		} else {
-			log.Printf("Tüm matrisler zaten veritabanında mevcut")
-		}
-	}()
+
+			// Get hashes from files
+			fileHashes, err := db.GetFileMatrixHashes(dataPath)
+			if err != nil {
+				log.Printf("HATA: Dosya hash'leri alınamadı: %v", err)
+				return
+			}
+
+			log.Printf("Veritabanında %d matris hash'i bulundu", len(dbHashes))
+			log.Printf("Dosyalarda %d matris hash'i bulundu", len(fileHashes))
+
+			// Check for missing matrices
+			missingCount := 0
+			for hash := range fileHashes {
+				if !dbHashes[hash] {
+					missingCount++
+				}
+			}
+
+			if missingCount > 0 {
+				log.Printf("Veritabanında %d eksik matris var, import işlemi başlatılıyor...", missingCount)
+				err := db.ImportMatricesFromFiles(dataPath)
+				if err != nil {
+					log.Printf("HATA: Matris import işlemi başarısız: %v", err)
+				}
+			} else {
+				log.Printf("Tüm matrisler zaten veritabanında mevcut")
+			}
+		}()
+	} else {
+		log.Printf("Otomatik import devre dışı (enabled: %v, process_on_start: %v)", 
+			config != nil && config.Import.Enabled, 
+			config != nil && config.Import.ProcessOnStart)
+	}
 
 	return nil
+}
+
+// MatrixExists checks if a matrix with given name exists in database
+func MatrixExists(name string) (bool, error) {
+	if db == nil {
+		return false, fmt.Errorf("veritabanı bağlantısı yok")
+	}
+
+	var count int
+	err := db.db.QueryRow("SELECT COUNT(*) FROM matrix_records WHERE title = $1", name).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+
+	return count > 0, nil
+}
+
+// SaveMatrixToDB saves a matrix to database and returns the ID
+func SaveMatrixToDB(name string, matrix Matrix, source string) (int, error) {
+	if db == nil {
+		return 0, fmt.Errorf("veritabanı bağlantısı yok")
+	}
+
+	record, err := db.SaveMatrix(name, matrix, "")
+	if err != nil {
+		return 0, err
+	}
+
+	return record.ID, nil
+}
+
+// CalculateAndSaveAlgorithm calculates and saves algorithm result for a matrix
+func CalculateAndSaveAlgorithm(matrixID int, matrix Matrix, algorithm string) error {
+	if db == nil {
+		return fmt.Errorf("veritabanı bağlantısı yok")
+	}
+
+	var boyarResult, paarResult, slpResult *AlgResult
+
+	switch strings.ToLower(algorithm) {
+	case "boyar":
+		result, err := runBoyarSLP(matrix)
+		if err != nil {
+			return fmt.Errorf("boyar algoritması hatası: %v", err)
+		}
+		boyarResult = result
+
+	case "paar":
+		result, err := runPaarAlgorithm(matrix)
+		if err != nil {
+			return fmt.Errorf("paar algoritması hatası: %v", err)
+		}
+		paarResult = result
+
+	case "slp":
+		result, err := runSLPHeuristic(matrix)
+		if err != nil {
+			return fmt.Errorf("slp algoritması hatası: %v", err)
+		}
+		slpResult = result
+
+	default:
+		return fmt.Errorf("desteklenmeyen algoritma: %s", algorithm)
+	}
+
+	return db.UpdateMatrixResults(matrixID, boyarResult, paarResult, slpResult)
 } 

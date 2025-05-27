@@ -1,0 +1,29 @@
+{
+  "database": {
+    "host": "localhost",
+    "port": 5432,
+    "user": "postgres",
+    "password": "password",
+    "dbname": "xor_optimization",
+    "sslmode": "disable"
+  },
+  "import": {
+    "enabled": false,
+    "data_directory": "./matrices-data",
+    "file_extensions": [".txt", ".csv", ".json"],
+    "max_file_size_mb": 500,
+    "process_on_start": false,
+    "watch_directory": false,
+    "skip_existing": true,
+    "batch_size": 10,
+    "auto_calculate": true,
+    "algorithms": ["boyar", "paar", "slp"]
+  },
+  "server": {
+    "port": ":3000",
+    "host": "localhost",
+    "enable_cors": true,
+    "log_level": "info",
+    "static_dir": "./web"
+  }
+} 

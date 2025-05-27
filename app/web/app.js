@@ -306,10 +306,18 @@ function displayMatrices(matrices) {
                     </div>
                     <div class="col-md-6">
                         <div class="row">
-                            <div class="col-4">
+                            <div class="col-6">
                                 <strong>Ham XOR:</strong> ${matrix.ham_xor_count}
                             </div>
-                            <div class="col-8">
+                            <div class="col-6">
+                                <strong>En Küçük XOR:</strong> ${matrix.smallest_xor || 'N/A'}
+                            </div>
+                        </div>
+                        <div class="row mt-1">
+                            <div class="col-6">
+                                <strong>Grup:</strong> ${matrix.group || 'N/A'}
+                            </div>
+                            <div class="col-6">
                                 <strong>Hex:</strong> <small>${matrix.matrix_hex}</small>
                             </div>
                         </div>
@@ -426,15 +434,28 @@ function changePage(page) {
 async function addMatrix() {
     try {
         const title = document.getElementById('matrixTitle').value;
-        const matrixData = document.getElementById('matrixData').value;
+        const group = document.getElementById('matrixGroup').value.trim();
+        const matrixData = document.getElementById('matrixData').value.trim();
         const processImmediately = document.getElementById('processImmediately').checked;
         
-        // Validate JSON
+        // Parse matrix data - support both simple format and JSON format
         let matrix;
+        
+        // Try simple format first, then JSON format
         try {
-            matrix = JSON.parse(matrixData);
-        } catch (e) {
-            throw new Error('Geçersiz JSON formatı');
+            // First try to parse as simple format: [0 1 0 1] per line
+            matrix = parseSimpleMatrixFormat(matrixData);
+        } catch (simpleError) {
+            // If simple format fails, try JSON format
+            try {
+                matrix = JSON.parse(matrixData);
+                if (!Array.isArray(matrix) || !Array.isArray(matrix[0])) {
+                    throw new Error('JSON verisi 2D array formatında olmalı');
+                }
+            } catch (jsonError) {
+                // Both formats failed, show more helpful error
+                throw new Error(`Geçersiz matris formatı. Basit format hatası: ${simpleError.message}. JSON format hatası: ${jsonError.message}`);
+            }
         }
         
         if (!Array.isArray(matrix) || !Array.isArray(matrix[0])) {
@@ -451,6 +472,7 @@ async function addMatrix() {
             },
             body: JSON.stringify({
                 title: title,
+                group: group,
                 matrix: matrix
             })
         });
@@ -477,6 +499,56 @@ async function addMatrix() {
     } finally {
         hideLoading();
     }
+}
+
+// Parse simple matrix format: [0 1 0 1] per line
+function parseSimpleMatrixFormat(matrixData) {
+    const lines = matrixData.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+    
+    if (lines.length === 0) {
+        throw new Error('Boş matris verisi');
+    }
+    
+    const matrix = [];
+    
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        
+        // Check if line starts with [ and ends with ]
+        if (!line.startsWith('[') || !line.endsWith(']')) {
+            throw new Error(`Satır ${i + 1}: Köşeli parantez ile başlayıp bitmelidir`);
+        }
+        
+        // Extract content between brackets
+        const content = line.slice(1, -1).trim();
+        
+        if (content.length === 0) {
+            throw new Error(`Satır ${i + 1}: Boş satır`);
+        }
+        
+        // Split by spaces and filter empty strings
+        const elements = content.split(/\s+/).filter(el => el.length > 0);
+        
+        if (elements.length === 0) {
+            throw new Error(`Satır ${i + 1}: Geçerli eleman bulunamadı`);
+        }
+        
+        // Validate that all elements are 0 or 1
+        for (let j = 0; j < elements.length; j++) {
+            if (elements[j] !== '0' && elements[j] !== '1') {
+                throw new Error(`Satır ${i + 1}, Eleman ${j + 1}: Sadece 0 ve 1 değerleri kabul edilir (${elements[j]} geçersiz)`);
+            }
+        }
+        
+        // Check that all rows have the same length
+        if (matrix.length > 0 && elements.length !== matrix[0].length) {
+            throw new Error(`Satır ${i + 1}: Tüm satırlar aynı uzunlukta olmalı (beklenen: ${matrix[0].length}, bulunan: ${elements.length})`);
+        }
+        
+        matrix.push(elements);
+    }
+    
+    return matrix;
 }
 
 // View matrix details
@@ -532,6 +604,14 @@ function displayMatrixDetails(matrix) {
                 
                 <div class="mb-3">
                     <strong>Ham XOR Sayısı:</strong> ${matrix.ham_xor_count}
+                </div>
+                
+                <div class="mb-3">
+                    <strong>En Küçük XOR:</strong> ${matrix.smallest_xor || 'Hesaplanmamış'}
+                </div>
+                
+                <div class="mb-3">
+                    <strong>Grup:</strong> ${matrix.group || 'Belirtilmemiş'}
                 </div>
                 
                 <div class="algorithm-result result-boyar mb-3">

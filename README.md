@@ -172,3 +172,27 @@ docker-compose logs -f db
 
 ### Port Çakışması
 - 3000 veya 5432 portları kullanımda ise docker-compose.yml dosyasında port numaralarını değiştirin 
+
+
+
+all 3x3 makalesine atif yapip involutifleri nasil buldugumuzu yazalim
+kanıtı yaz  65 sayfa 4.bolum hocanin doktora tezindeki(atifi hocanin yolladigi makaleden yapacagim, ) involutif elde edilmesini yazcaz. about semi involutary pdf komple turkceye cevrilip yazilacak
+
+2.bolumde magmadan bahset(cikis yeri vs) magma nasil kullanilir ufak ornekler,   slp ve paar den bahset
+
+4bbolumde 3x3 ve 4x4 ornekler sunulacak 4x4 icin aciklama yazilacak  xor sayisi lseq 80 seklinde bakildi 2 uzeri 4 ornekleri
+
+
+5.bolum literatur karsilastirmasi ve sonuclar
+
+involutif mds -> ayni cismin alfa  uzeri 1 ile carpilmis hali -> cikan matris ->
+
+
+semilerin tersi kendisine esit olmadigi icin sifreleme desifreleme esit olmadigi icin yan kanal saldirilarina acik olabilir bu sonuc bolumunde belirtilmeli
+
+
+
+az xor a sahip olanlarin terslerinin de xor maliyetlerine bakmak lazim
+
+programi nasil yazdigini anlat json format
+

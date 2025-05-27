@@ -14,6 +14,7 @@ import (
 // SaveMatrixRequest represents the request to save a matrix
 type SaveMatrixRequest struct {
 	Title  string `json:"title"`
+	Group  string `json:"group,omitempty"`
 	Matrix Matrix `json:"matrix"`
 }
 
@@ -65,7 +66,7 @@ func saveMatrixHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	record, err := db.SaveMatrix(req.Title, req.Matrix)
+	record, err := db.SaveMatrix(req.Title, req.Matrix, req.Group)
 	if err != nil {
 		http.Error(w, "Matris kaydedilemedi: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -226,6 +227,16 @@ func recalculateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Recalculate Ham XOR
+	newHamXor := calculateHammingXOR(matrix)
+	
+	// Update Ham XOR in database
+	_, err = db.db.Exec("UPDATE matrix_records SET ham_xor_count = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2", newHamXor, req.MatrixID)
+	if err != nil {
+		http.Error(w, "Ham XOR güncellenemedi: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	var boyarResult, paarResult, slpResult *AlgResult
 
 	// Run requested algorithms
@@ -313,7 +324,7 @@ func processAndSaveMatrixHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Save matrix first
-	record, err := db.SaveMatrix(req.Title, req.Matrix)
+	record, err := db.SaveMatrix(req.Title, req.Matrix, req.Group)
 	if err != nil {
 		http.Error(w, "Matris kaydedilemedi: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -404,6 +415,15 @@ func bulkRecalculateHandler(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				log.Printf("Matris parse hatası (ID %d): %v", matrix.ID, err)
 				continue
+			}
+
+			// Recalculate Ham XOR
+			newHamXor := calculateHammingXOR(matrixData)
+			
+			// Update Ham XOR in database
+			_, err = db.db.Exec("UPDATE matrix_records SET ham_xor_count = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2", newHamXor, matrix.ID)
+			if err != nil {
+				log.Printf("Ham XOR güncellenemedi (ID %d): %v", matrix.ID, err)
 			}
 
 			var boyarResult, paarResult, slpResult *AlgResult

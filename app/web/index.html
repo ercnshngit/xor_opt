@@ -202,9 +202,22 @@
                                                         <input type="text" class="form-control" id="matrixTitle" required>
                                                     </div>
                                                     <div class="mb-3">
-                                                        <label for="matrixData" class="form-label">Matris Verisi (JSON formatında)</label>
-                                                        <textarea class="form-control matrix-input" id="matrixData" rows="10" placeholder='[["1","0","1"],["0","1","0"],["1","1","1"]]' required></textarea>
-                                                        <div class="form-text">Matris verilerini JSON array formatında girin.</div>
+                                                        <label for="matrixGroup" class="form-label">Grup (İsteğe Bağlı)</label>
+                                                        <input type="text" class="form-control" id="matrixGroup" placeholder="Örn: deneme, test_data">
+                                                        <div class="form-text">
+                                                            Matrisleri gruplamak için kullanılır. Boş bırakılabilir.
+                                                        </div>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <label for="matrixData" class="form-label">Matris Verisi</label>
+                                                        <textarea class="form-control matrix-input" id="matrixData" rows="10" placeholder="[0 0 1 0 0 0 1 1 0 0 1 1]
+[0 0 1 1 1 0 1 0 1 0 1 0]
+[1 0 0 1 1 1 0 1 1 1 0 1]
+[0 1 0 0 0 1 1 0 0 1 1 0]" required></textarea>
+                                                        <div class="form-text">
+                                                            Matris verilerini satır satır girin. Her satır köşeli parantez içinde, elemanlar boşlukla ayrılmış olmalı.
+                                                            <br>Örnek: [0 1 0 1] veya JSON formatı: ["0","1","0","1"]
+                                                        </div>
                                                     </div>
                                                     <div class="mb-3 form-check">
                                                         <input type="checkbox" class="form-check-input" id="processImmediately" checked>
@@ -225,19 +238,31 @@
                                                 <h5 class="mb-0">Örnek Matris Formatı</h5>
                                             </div>
                                             <div class="card-body">
-                                                <p>3x3 binary matris örneği:</p>
+                                                <p>3x3 binary matris örneği (Basit Format):</p>
+                                                <pre class="matrix-display">[1 0 1]
+[0 1 0]
+[1 1 1]</pre>
+                                                
+                                                <p class="mt-3">Aynı matris JSON formatında:</p>
                                                 <pre class="matrix-display">[
   ["1", "0", "1"],
   ["0", "1", "0"],
   ["1", "1", "1"]
 ]</pre>
-                                                <p class="mt-3">12x12 matris örneği:</p>
-                                                <pre class="matrix-display">[
-  ["1","0","0","1","1","1","0","1","1","1","0","1"],
-  ["1","1","0","1","1","0","1","1","1","0","1","1"],
-  ["0","1","1","0","0","1","0","1","0","1","0","1"],
-  ...
-]</pre>
+                                                
+                                                <p class="mt-3">12x12 matris örneği (Basit Format):</p>
+                                                <pre class="matrix-display">[0 0 1 0 0 0 1 1 0 0 1 1]
+[0 0 1 1 1 0 1 0 1 0 1 0]
+[1 0 0 1 1 1 0 1 1 1 0 1]
+[0 1 0 0 0 1 1 0 0 1 1 0]
+[0 1 0 1 0 1 0 0 0 1 0 1]
+[1 1 1 1 0 1 1 0 1 1 1 1]
+[0 1 1 1 0 0 1 1 0 1 1 1]
+[1 0 1 1 1 0 0 1 1 0 1 1]
+[0 1 1 0 0 1 1 0 0 1 1 1]
+[0 1 0 1 0 1 0 1 1 1 0 0]
+[1 0 1 0 1 0 1 0 1 1 1 0]
+[1 1 0 1 1 1 0 1 1 1 1 1]</pre>
                                             </div>
                                         </div>
                                     </div>

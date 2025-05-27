@@ -56,9 +56,11 @@ Uygulama `http://localhost:3000` adresinde çalışacaktır.
 CREATE TABLE matrix_records (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
+    group_name TEXT,                    -- Grup adı (dosya adı)
     matrix_binary TEXT NOT NULL,        -- Binary matris gösterimi
     matrix_hex TEXT NOT NULL,           -- Hex formatında matris
     ham_xor_count INTEGER NOT NULL,     -- Hamming XOR sayısı
+    smallest_xor INTEGER,               -- En küçük XOR değeri
     boyar_xor_count INTEGER,            -- Boyar algoritması XOR sayısı
     boyar_depth INTEGER,                -- Boyar algoritması derinlik
     boyar_program TEXT,                 -- Boyar algoritması programı (JSON)

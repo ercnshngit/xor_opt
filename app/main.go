@@ -441,17 +441,15 @@ func (p *PaarAlgorithm) Solve(matrix Matrix) (AlgResult, error) {
 		return AlgResult{}, err
 	}
 
-	// Convert matrix to uint64 array
+	// Convert matrix to uint64 array (column-wise like C++)
 	inputMatrix := make([]uint64, p.Dim+200)
 	for i := 0; i < p.Dim; i++ {
 		var val uint64 = 0
-		var powerOfTwo uint64 = 1
 		for j := 0; j < p.NumInputs; j++ {
-			bit, _ := strconv.Atoi(strings.TrimSpace(matrix[i][j]))
+			bit, _ := strconv.Atoi(strings.TrimSpace(matrix[j][i]))
 			if bit == 1 {
-				val += powerOfTwo
+				val |= (1 << (p.Dim - 1 - j))
 			}
-			powerOfTwo *= 2
 		}
 		inputMatrix[i] = val & ((1 << p.Dim) - 1)
 	}
@@ -1114,26 +1112,48 @@ func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	log.Println("=== XOR Optimizasyon Backend Başlatılıyor ===")
 	
+	// Load configuration
+	configPath := "./config.json"
+	config, err := LoadConfig(configPath)
+	if err != nil {
+		log.Fatal("Config yüklenemedi:", err)
+	}
+	
+	log.Printf("Config yüklendi: %+v", config)
+	
 	// Initialize database
-	if err := InitDatabase(); err != nil {
+	if err := InitDatabase(config); err != nil {
 		log.Fatal("Veritabanı başlatılamadı:", err)
 	}
 	defer db.Close()
+
+	// Auto import data if enabled
+	if config.Import.ProcessOnStart {
+		log.Println("Başlangıçta otomatik import başlatılıyor...")
+		if err := AutoImportData(config); err != nil {
+			log.Printf("Otomatik import hatası: %v", err)
+		}
+	}
 
 	// Create router
 	r := mux.NewRouter()
 
 	// CORS middleware
-	c := cors.New(cors.Options{
+	corsOptions := cors.Options{
 		AllowedOrigins: []string{"*"},
 		AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders: []string{"*"},
-	})
+	}
+	if !config.Server.EnableCORS {
+		corsOptions.AllowedOrigins = []string{config.Server.Host}
+	}
+	c := cors.New(corsOptions)
 
 	// Static dosyalar için handler
-	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("./web/"))))
+	staticDir := config.Server.StaticDir
+	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir(staticDir))))
 	r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "./web/index.html")
+		http.ServeFile(w, r, staticDir+"/index.html")
 	})
 
 	// Original API endpoints
@@ -1149,9 +1169,33 @@ func main() {
 	r.HandleFunc("/api/matrices/recalculate", recalculateHandler).Methods("POST")
 	r.HandleFunc("/api/matrices/bulk-recalculate", bulkRecalculateHandler).Methods("POST")
 
-	port := ":3000"
+	// Config API endpoints
+	r.HandleFunc("/api/config", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(config)
+	}).Methods("GET")
+	
+	r.HandleFunc("/api/config/import", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == "POST" {
+			if err := AutoImportData(config); err != nil {
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"error": err.Error(),
+				})
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"message": "Import işlemi başarıyla tamamlandı",
+			})
+		}
+	}).Methods("POST")
+
+	port := config.Server.Port
 	log.Printf("Server starting on %s", port)
-	log.Printf("Web Interface: http://localhost%s", port)
+	log.Printf("Web Interface: http://%s%s", config.Server.Host, port)
+	log.Printf("Config dosyası: %s", configPath)
+	log.Printf("Data dizini: %s", config.Import.DataDirectory)
+	log.Printf("Otomatik import: %v", config.Import.Enabled)
 	log.Printf("API Endpoints:")
 	log.Printf("  POST /boyar - BoyarSLP algorithm")
 	log.Printf("  POST /paar  - Paar algorithm")
@@ -1162,6 +1206,8 @@ func main() {
 	log.Printf("  POST /api/matrices/process - Process and save matrix")
 	log.Printf("  POST /api/matrices/recalculate - Recalculate algorithms")
 	log.Printf("  POST /api/matrices/bulk-recalculate - Bulk recalculate algorithms")
+	log.Printf("  GET  /api/config - Get current configuration")
+	log.Printf("  POST /api/config/import - Trigger manual import")
 	log.Printf("=== Backend hazır, istekleri bekleniyor ===")
 
 	handler := c.Handler(r)
