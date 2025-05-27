@@ -506,8 +506,44 @@ func (d *Database) saveMatrixFromImport(title string, matrix [][]string) error {
 	}
 
 	// Save the matrix
-	_, err = d.SaveMatrix(title, matrix)
-	return err
+	savedMatrix, err := d.SaveMatrix(title, matrix)
+	if err != nil {
+		return err
+	}
+
+	// Calculate algorithms for the newly saved matrix
+	log.Printf("Yeni matris için algoritmaları hesaplanıyor: %s", title)
+	
+	// Run algorithms in background
+	go func() {
+		// Calculate Boyar SLP
+		boyarResult, err := runBoyarSLP(matrix)
+		if err != nil {
+			log.Printf("HATA: %s için Boyar SLP hesaplanamadı: %v", title, err)
+		}
+
+		// Calculate Paar Algorithm
+		paarResult, err := runPaarAlgorithm(matrix)
+		if err != nil {
+			log.Printf("HATA: %s için Paar algoritması hesaplanamadı: %v", title, err)
+		}
+
+		// Calculate SLP Heuristic
+		slpResult, err := runSLPHeuristic(matrix)
+		if err != nil {
+			log.Printf("HATA: %s için SLP Heuristic hesaplanamadı: %v", title, err)
+		}
+
+		// Update matrix with results
+		err = d.UpdateMatrixResults(savedMatrix.ID, boyarResult, paarResult, slpResult)
+		if err != nil {
+			log.Printf("HATA: %s için sonuçlar kaydedilemedi: %v", title, err)
+		} else {
+			log.Printf("✓ %s için tüm algoritmalar başarıyla hesaplandı", title)
+		}
+	}()
+
+	return nil
 }
 
 // GetAllMatrixHashes returns all matrix hashes from database
