@@ -233,37 +233,37 @@ func (d *Database) GetMatrices(page, limit int, titleFilter string, hamXorMin, h
 	}
 
 	if boyarXorMin != nil {
-		conditions = append(conditions, fmt.Sprintf("boyar_xor_count >= $%d", argIndex))
+		conditions = append(conditions, fmt.Sprintf("boyar_xor_count IS NOT NULL AND boyar_xor_count >= $%d", argIndex))
 		args = append(args, *boyarXorMin)
 		argIndex++
 	}
 
 	if boyarXorMax != nil {
-		conditions = append(conditions, fmt.Sprintf("boyar_xor_count <= $%d", argIndex))
+		conditions = append(conditions, fmt.Sprintf("boyar_xor_count IS NOT NULL AND boyar_xor_count <= $%d", argIndex))
 		args = append(args, *boyarXorMax)
 		argIndex++
 	}
 
 	if paarXorMin != nil {
-		conditions = append(conditions, fmt.Sprintf("paar_xor_count >= $%d", argIndex))
+		conditions = append(conditions, fmt.Sprintf("paar_xor_count IS NOT NULL AND paar_xor_count >= $%d", argIndex))
 		args = append(args, *paarXorMin)
 		argIndex++
 	}
 
 	if paarXorMax != nil {
-		conditions = append(conditions, fmt.Sprintf("paar_xor_count <= $%d", argIndex))
+		conditions = append(conditions, fmt.Sprintf("paar_xor_count IS NOT NULL AND paar_xor_count <= $%d", argIndex))
 		args = append(args, *paarXorMax)
 		argIndex++
 	}
 
 	if slpXorMin != nil {
-		conditions = append(conditions, fmt.Sprintf("slp_xor_count >= $%d", argIndex))
+		conditions = append(conditions, fmt.Sprintf("slp_xor_count IS NOT NULL AND slp_xor_count >= $%d", argIndex))
 		args = append(args, *slpXorMin)
 		argIndex++
 	}
 
 	if slpXorMax != nil {
-		conditions = append(conditions, fmt.Sprintf("slp_xor_count <= $%d", argIndex))
+		conditions = append(conditions, fmt.Sprintf("slp_xor_count IS NOT NULL AND slp_xor_count <= $%d", argIndex))
 		args = append(args, *slpXorMax)
 		argIndex++
 	}

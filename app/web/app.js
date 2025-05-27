@@ -249,6 +249,25 @@ async function loadMatrices() {
             throw new Error(data.message || 'Matrisler yüklenemedi');
         }
 
+        console.log('API Response:', {
+            total: data.total,
+            page: data.page,
+            total_pages: data.total_pages,
+            currentPage: currentPage,
+            matrices_count: data.matrices.length
+        });
+
+        // If current page is greater than total pages, reset to page 1
+        if (currentPage > data.total_pages && data.total_pages > 0) {
+            console.log('Current page is greater than total pages, resetting to page 1');
+            currentPage = 1;
+            loadMatrices(); // Reload with page 1
+            return;
+        }
+
+        // Sync currentPage with API response
+        currentPage = data.page;
+
         displayMatrices(data.matrices);
         setupPagination(data.page, data.total_pages, data.total);
         
