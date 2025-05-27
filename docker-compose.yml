@@ -1,0 +1,44 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: xor_opt_db
+    environment:
+      POSTGRES_DB: xor_opt
+      POSTGRES_USER: xor_user
+      POSTGRES_PASSWORD: xor_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U xor_user -d xor_opt"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: xor_opt_app
+    ports:
+      - "3000:3000"
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=xor_opt
+      - DB_USER=xor_user
+      - DB_PASSWORD=xor_password
+      - DB_SSLMODE=disable
+      - MATRICES_DATA_PATH=/app/matrices-data
+    volumes:
+      - ./app/matrices-data:/app/matrices-data:ro
+      - ./app/web:/app/web:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data: 

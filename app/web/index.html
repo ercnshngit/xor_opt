@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XOR Optimizasyon - Matris Yönetimi</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .matrix-display {
+            font-family: 'Courier New', monospace;
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            white-space: pre-line;
+            font-size: 12px;
+        }
+        .algorithm-result {
+            margin: 5px 0;
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .result-boyar { background-color: #e3f2fd; }
+        .result-paar { background-color: #f3e5f5; }
+        .result-slp { background-color: #e8f5e8; }
+        .loading {
+            display: none;
+        }
+        .matrix-input {
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        .card-header {
+            background: #eee;
+            color: #111;
+        }
+        .btn-primary {
+            background: #667eea;
+            border: none;
+        }
+        .btn-primary:hover {
+            background: #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid mt-4">
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="mb-0"><i class="fas fa-calculator me-2"></i>XOR Optimizasyon - Matris Yönetimi</h3>
+                    </div>
+                    <div class="card-body">
+                        <!-- Navigation Tabs -->
+                        <ul class="nav nav-tabs mb-4" id="mainTabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="matrices-tab" data-bs-toggle="tab" data-bs-target="#matrices" type="button" role="tab">
+                                    <i class="fas fa-table me-2"></i>Matrisler
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="add-matrix-tab" data-bs-toggle="tab" data-bs-target="#add-matrix" type="button" role="tab">
+                                    <i class="fas fa-plus me-2"></i>Yeni Matris
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="bulk-upload-tab" data-bs-toggle="tab" data-bs-target="#bulk-upload" type="button" role="tab">
+                                    <i class="fas fa-upload me-2"></i>Toplu Yükleme
+                                </button>
+                            </li>
+                        </ul>
+
+                        <div class="tab-content" id="mainTabContent">
+                            <!-- Matrices List Tab -->
+                            <div class="tab-pane fade show active" id="matrices" role="tabpanel">
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <div class="input-group">
+                                            <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                            <input type="text" class="form-control" id="searchInput" placeholder="Başlık ile ara...">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6 text-end">
+                                        <button class="btn btn-outline-primary" onclick="loadMatrices()">
+                                            <i class="fas fa-refresh me-2"></i>Yenile
+                                        </button>
+                                        <button class="btn btn-outline-secondary ms-2" type="button" data-bs-toggle="collapse" data-bs-target="#filterCollapse">
+                                            <i class="fas fa-filter me-2"></i>Filtreler
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Advanced Filters -->
+                                <div class="collapse" id="filterCollapse">
+                                    <div class="card mb-3">
+                                        <div class="card-header">
+                                            <h6 class="mb-0"><i class="fas fa-sliders-h me-2"></i>Gelişmiş Filtreler</h6>
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="row">
+                                                <div class="col-md-3">
+                                                    <label class="form-label">Ham XOR Sayısı</label>
+                                                    <div class="row">
+                                                        <div class="col-6">
+                                                            <input type="number" class="form-control form-control-sm" id="hamXorMin" placeholder="Min">
+                                                        </div>
+                                                        <div class="col-6">
+                                                            <input type="number" class="form-control form-control-sm" id="hamXorMax" placeholder="Max">
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <label class="form-label">Boyar XOR Sayısı</label>
+                                                    <div class="row">
+                                                        <div class="col-6">
+                                                            <input type="number" class="form-control form-control-sm" id="boyarXorMin" placeholder="Min">
+                                                        </div>
+                                                        <div class="col-6">
+                                                            <input type="number" class="form-control form-control-sm" id="boyarXorMax" placeholder="Max">
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <label class="form-label">Paar XOR Sayısı</label>
+                                                    <div class="row">
+                                                        <div class="col-6">
+                                                            <input type="number" class="form-control form-control-sm" id="paarXorMin" placeholder="Min">
+                                                        </div>
+                                                        <div class="col-6">
+                                                            <input type="number" class="form-control form-control-sm" id="paarXorMax" placeholder="Max">
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <label class="form-label">SLP XOR Sayısı</label>
+                                                    <div class="row">
+                                                        <div class="col-6">
+                                                            <input type="number" class="form-control form-control-sm" id="slpXorMin" placeholder="Min">
+                                                        </div>
+                                                        <div class="col-6">
+                                                            <input type="number" class="form-control form-control-sm" id="slpXorMax" placeholder="Max">
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="row mt-3">
+                                                <div class="col-12 text-end">
+                                                    <button class="btn btn-outline-secondary btn-sm me-2" onclick="clearFilters()">
+                                                        <i class="fas fa-times me-1"></i>Temizle
+                                                    </button>
+                                                    <button class="btn btn-primary btn-sm" onclick="applyFilters()">
+                                                        <i class="fas fa-search me-1"></i>Filtrele
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div id="matricesContainer">
+                                    <!-- Matrices will be loaded here -->
+                                </div>
+
+                                <!-- Pagination -->
+                                <nav aria-label="Sayfa navigasyonu" id="paginationContainer" style="display: none;">
+                                    <ul class="pagination justify-content-center" id="pagination">
+                                    </ul>
+                                </nav>
+                            </div>
+
+                            <!-- Add Matrix Tab -->
+                            <div class="tab-pane fade" id="add-matrix" role="tabpanel">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="card">
+                                            <div class="card-header">
+                                                <h5 class="mb-0">Yeni Matris Ekle</h5>
+                                            </div>
+                                            <div class="card-body">
+                                                <form id="addMatrixForm">
+                                                    <div class="mb-3">
+                                                        <label for="matrixTitle" class="form-label">Başlık</label>
+                                                        <input type="text" class="form-control" id="matrixTitle" required>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <label for="matrixData" class="form-label">Matris Verisi (JSON formatında)</label>
+                                                        <textarea class="form-control matrix-input" id="matrixData" rows="10" placeholder='[["1","0","1"],["0","1","0"],["1","1","1"]]' required></textarea>
+                                                        <div class="form-text">Matris verilerini JSON array formatında girin.</div>
+                                                    </div>
+                                                    <div class="mb-3 form-check">
+                                                        <input type="checkbox" class="form-check-input" id="processImmediately" checked>
+                                                        <label class="form-check-label" for="processImmediately">
+                                                            Hemen tüm algoritmaları çalıştır
+                                                        </label>
+                                                    </div>
+                                                    <button type="submit" class="btn btn-primary">
+                                                        <i class="fas fa-save me-2"></i>Kaydet
+                                                    </button>
+                                                </form>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="card">
+                                            <div class="card-header">
+                                                <h5 class="mb-0">Örnek Matris Formatı</h5>
+                                            </div>
+                                            <div class="card-body">
+                                                <p>3x3 binary matris örneği:</p>
+                                                <pre class="matrix-display">[
+  ["1", "0", "1"],
+  ["0", "1", "0"],
+  ["1", "1", "1"]
+]</pre>
+                                                <p class="mt-3">12x12 matris örneği:</p>
+                                                <pre class="matrix-display">[
+  ["1","0","0","1","1","1","0","1","1","1","0","1"],
+  ["1","1","0","1","1","0","1","1","1","0","1","1"],
+  ["0","1","1","0","0","1","0","1","0","1","0","1"],
+  ...
+]</pre>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Bulk Upload Tab -->
+                            <div class="tab-pane fade" id="bulk-upload" role="tabpanel">
+                                <div class="row">
+                                    <div class="col-md-8">
+                                        <div class="card">
+                                            <div class="card-header">
+                                                <h5 class="mb-0">Toplu Matris Yükleme</h5>
+                                            </div>
+                                            <div class="card-body">
+                                                <form id="bulkUploadForm">
+                                                    <!-- Input Method Selection -->
+                                                    <div class="mb-3">
+                                                        <label class="form-label">Veri Girişi Yöntemi</label>
+                                                        <div class="btn-group w-100" role="group">
+                                                            <input type="radio" class="btn-check" name="inputMethod" id="textInput" value="text" checked>
+                                                            <label class="btn btn-outline-primary" for="textInput">
+                                                                <i class="fas fa-keyboard me-2"></i>Metin Girişi
+                                                            </label>
+                                                            
+                                                            <input type="radio" class="btn-check" name="inputMethod" id="fileInput" value="file">
+                                                            <label class="btn btn-outline-primary" for="fileInput">
+                                                                <i class="fas fa-file-upload me-2"></i>Dosya Yükleme
+                                                            </label>
+                                                        </div>
+                                                    </div>
+
+                                                    <!-- Text Input Section -->
+                                                    <div id="textInputSection" class="mb-3">
+                                                        <label for="bulkData" class="form-label">Matris Verileri</label>
+                                                        <textarea class="form-control matrix-input" id="bulkData" rows="15" placeholder="Matris verilerini buraya yapıştırın..."></textarea>
+                                                        <div class="form-text">
+                                                            Matrisleri "-----" ile ayırarak yapıştırın. Her matris bloğunun ilk satırı başlık olacaktır.
+                                                        </div>
+                                                    </div>
+
+                                                    <!-- File Input Section -->
+                                                    <div id="fileInputSection" class="mb-3" style="display: none;">
+                                                        <label for="bulkFile" class="form-label">Matris Dosyası</label>
+                                                        <input type="file" class="form-control" id="bulkFile" accept=".txt,.dat,.csv">
+                                                        <div class="form-text">
+                                                            .txt, .dat veya .csv dosyalarını yükleyebilirsiniz.
+                                                        </div>
+                                                    </div>
+
+                                                    <!-- Chunk Settings -->
+                                                    <div class="row mb-3">
+                                                        <div class="col-md-12">
+                                                            <label for="matrixRowCount" class="form-label">Matris Bloğu Satır Sayısı</label>
+                                                            <input type="number" class="form-control" id="matrixRowCount" value="16" min="1" max="100">
+                                                            <div class="form-text">
+                                                                Her matris bloğunun toplam satır sayısı (başlık + matris + ek bilgi + ayırıcı). Chunk boyutu otomatik hesaplanır (10 × bu değer).
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    <div class="mb-3 form-check">
+                                                        <input type="checkbox" class="form-check-input" id="bulkProcessImmediately" checked>
+                                                        <label class="form-check-label" for="bulkProcessImmediately">
+                                                            Tüm matrisler için algoritmaları çalıştır
+                                                        </label>
+                                                    </div>
+
+                                                    <button type="submit" class="btn btn-primary">
+                                                        <i class="fas fa-upload me-2"></i>Toplu Yükle
+                                                    </button>
+                                                </form>
+                                                
+                                                <div id="bulkUploadProgress" style="display: none;" class="mt-3">
+                                                    <div class="progress mb-2">
+                                                        <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+                                                    </div>
+                                                    <div class="progress mb-2">
+                                                        <div class="progress-bar bg-info" id="chunkProgress" role="progressbar" style="width: 0%"></div>
+                                                    </div>
+                                                    <div class="mt-2">
+                                                        <small id="bulkUploadStatus">Yükleme başlıyor...</small><br>
+                                                        <small id="chunkStatus" class="text-muted">Chunk durumu...</small>
+                                                    </div>
+                                                </div>
+                                                
+                                                <div id="bulkUploadResults" class="mt-3" style="display: none;">
+                                                    <h6>Yükleme Sonuçları:</h6>
+                                                    <div id="bulkUploadResultsList"></div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="card">
+                                            <div class="card-header">
+                                                <h5 class="mb-0">Toplu Yükleme Formatı</h5>
+                                            </div>
+                                            <div class="card-body">
+                                                <p>Örnek format:</p>
+                                                <pre class="matrix-display">x^1 ile carpilmis A1 matrisi (binary):
+[0 0 1 0 0 0 1 1 0 0 1 1]
+[0 0 1 1 1 0 1 0 1 0 1 0]
+[1 0 0 1 1 1 0 1 1 1 0 1]
+[0 1 0 0 0 1 1 0 0 1 1 0]
+[0 1 0 1 0 1 0 0 0 1 0 1]
+[1 1 1 1 0 1 1 0 1 1 1 1]
+[0 1 1 1 0 0 1 1 0 1 1 1]
+[1 0 1 1 1 0 0 1 1 0 1 1]
+[0 1 1 0 0 1 1 0 0 1 1 1]
+[0 1 0 1 0 1 0 1 1 1 0 0]
+[1 0 1 0 1 0 1 0 1 1 1 0]
+[1 1 0 1 1 1 0 1 1 1 1 1]
+HamXOR Sayisi:
+73
+------------------------------</pre>
+                                                <div class="mt-3">
+                                                    <h6>Önemli Notlar:</h6>
+                                                    <ul class="small">
+                                                        <li>Her matris bloğu "------------------------------" ile ayrılmalı</li>
+                                                        <li>İlk satır matris başlığı olarak kullanılır</li>
+                                                        <li>Matris satırları [0 0 1 0 0 0 1 1 0 0 1 1] formatında olmalı</li>
+                                                        <li>HamXOR bilgisi "HamXOR Sayisi:" ve değer satırları şeklinde</li>
+                                                        <li>Boş satırlar otomatik olarak atlanır</li>
+                                                        <li>Büyük dosyalar chunk'lar halinde işlenir</li>
+                                                        <li>Chunk boyutu matris bloğu satır sayısının katı olmalı</li>
+                                                        <li><strong>Matris bloğu:</strong> Başlık + 12 satır matris + HamXOR bilgisi + ayırıcı (toplam: 16 satır)</li>
+                                                    </ul>
+                                                </div>
+                                                
+                                                <div class="mt-3">
+                                                    <h6>Dosya Formatı:</h6>
+                                                    <ul class="small">
+                                                        <li><strong>.txt:</strong> Düz metin formatı</li>
+                                                        <li><strong>.dat:</strong> Veri dosyası formatı</li>
+                                                        <li><strong>.csv:</strong> Virgülle ayrılmış değerler</li>
+                                                    </ul>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Matrix Detail Modal -->
+    <div class="modal fade" id="matrixModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="matrixModalTitle">Matris Detayları</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="matrixModalBody">
+                    <!-- Matrix details will be loaded here -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Kapat</button>
+                    <button type="button" class="btn btn-primary" id="recalculateBtn">
+                        <i class="fas fa-calculator me-2"></i>Yeniden Hesapla
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Modal -->
+    <div class="modal fade" id="loadingModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-body text-center">
+                    <div class="spinner-border text-primary mb-3" role="status">
+                        <span class="visually-hidden">Yükleniyor...</span>
+                    </div>
+                    <p id="loadingText">İşlem yapılıyor...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="static/app.js"></script>
+</body>
+</html> 

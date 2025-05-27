@@ -1,0 +1,41 @@
+# Git
+.git
+.gitignore
+
+# Documentation
+README.md
+*.md
+
+# Test files
+*_test.go
+test_*.go
+test_*.sh
+test_*.json
+
+# Development files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+
+# Database files (we use PostgreSQL in container)
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary files
+*.tmp
+*.temp 
