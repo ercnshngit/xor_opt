@@ -495,7 +495,7 @@ func (d *Database) importMatricesFromFile(filePath string) (int, error) {
 	return importedCount, nil
 }
 
-// saveMatrixFromImport saves a matrix during import process with algorithm calculation
+// saveMatrixFromImport saves a matrix during import process
 func (d *Database) saveMatrixFromImport(title string, matrix [][]string) error {
 	// Check if matrix already exists by hash
 	matrixHash := calculateMatrixHash(matrix)
@@ -505,52 +505,9 @@ func (d *Database) saveMatrixFromImport(title string, matrix [][]string) error {
 		return nil
 	}
 
-	// Save the matrix first
-	record, err := d.SaveMatrix(title, matrix)
-	if err != nil {
-		return err
-	}
-
-	// Calculate algorithms immediately during import
-	go func() {
-		log.Printf("Matris %d için algoritmalar hesaplanıyor...", record.ID)
-		
-		var boyarResult, paarResult, slpResult *AlgResult
-
-		// Boyar algorithm
-		boyar := NewBoyarSLP(10)
-		if result, err := boyar.Solve(matrix); err == nil {
-			boyarResult = &result
-		} else {
-			log.Printf("Boyar algoritması hatası (ID %d): %v", record.ID, err)
-		}
-
-		// Paar algorithm
-		paar := NewPaarAlgorithm()
-		if result, err := paar.Solve(matrix); err == nil {
-			paarResult = &result
-		} else {
-			log.Printf("Paar algoritması hatası (ID %d): %v", record.ID, err)
-		}
-
-		// SLP algorithm
-		slp := NewSLPHeuristic()
-		if result, err := slp.Solve(matrix); err == nil {
-			slpResult = &result
-		} else {
-			log.Printf("SLP algoritması hatası (ID %d): %v", record.ID, err)
-		}
-
-		// Update database with results
-		err = d.UpdateMatrixResults(record.ID, boyarResult, paarResult, slpResult)
-		if err != nil {
-			log.Printf("Algoritma sonuçları güncellenemedi (ID %d): %v", record.ID, err)
-		} else {
-			log.Printf("Matris %d algoritmaları tamamlandı", record.ID)
-		}
-	}()
-
-	return nil
+	// Save the matrix
+	_, err = d.SaveMatrix(title, matrix)
+	return err
 }
 
 // GetAllMatrixHashes returns all matrix hashes from database
