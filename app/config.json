@@ -8,11 +8,11 @@
     "sslmode": "disable"
   },
   "import": {
-    "enabled": false,
+    "enabled": true,
     "data_directory": "./matrices-data",
     "file_extensions": [".txt", ".csv", ".json"],
     "max_file_size_mb": 500,
-    "process_on_start": false,
+    "process_on_start": true,
     "watch_directory": false,
     "skip_existing": true,
     "batch_size": 10,
