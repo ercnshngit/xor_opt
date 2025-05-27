@@ -9,7 +9,7 @@
   },
   "import": {
     "enabled": true,
-    "data_directory": "./matrices-data",
+    "data_directory": "./app/matrices-data",
     "file_extensions": [".txt", ".csv", ".json"],
     "max_file_size_mb": 500,
     "process_on_start": true,
