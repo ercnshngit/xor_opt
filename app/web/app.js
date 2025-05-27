@@ -189,6 +189,17 @@ function setupEventListeners() {
         currentPage = 1; // Reset to first page when changing page size
         loadMatrices();
     });
+
+    // Pagination event delegation
+    document.addEventListener('click', function(e) {
+        if (e.target.matches('.page-link[data-page]')) {
+            e.preventDefault();
+            const page = parseInt(e.target.getAttribute('data-page'));
+            if (page && page > 0) {
+                changePage(page);
+            }
+        }
+    });
 }
 
 // Load matrices from API
@@ -352,7 +363,7 @@ function setupPagination(currentPage, totalPages, totalItems) {
     // Previous button
     html += `
         <li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
-            <a class="page-link" href="#" onclick="changePage(${currentPage - 1})" aria-label="Previous">
+            <a class="page-link" href="#" ${currentPage > 1 ? `data-page="${currentPage - 1}"` : ''} aria-label="Previous">
                 <span aria-hidden="true">&laquo;</span>
             </a>
         </li>
@@ -363,7 +374,7 @@ function setupPagination(currentPage, totalPages, totalItems) {
     const endPage = Math.min(totalPages, currentPage + 2);
     
     if (startPage > 1) {
-        html += `<li class="page-item"><a class="page-link" href="#" onclick="changePage(1)">1</a></li>`;
+        html += `<li class="page-item"><a class="page-link" href="#" data-page="1">1</a></li>`;
         if (startPage > 2) {
             html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
         }
@@ -372,7 +383,7 @@ function setupPagination(currentPage, totalPages, totalItems) {
     for (let i = startPage; i <= endPage; i++) {
         html += `
             <li class="page-item ${i === currentPage ? 'active' : ''}">
-                <a class="page-link" href="#" onclick="changePage(${i})">${i}</a>
+                <a class="page-link" href="#" ${i !== currentPage ? `data-page="${i}"` : ''}>${i}</a>
             </li>
         `;
     }
@@ -381,13 +392,13 @@ function setupPagination(currentPage, totalPages, totalItems) {
         if (endPage < totalPages - 1) {
             html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
         }
-        html += `<li class="page-item"><a class="page-link" href="#" onclick="changePage(${totalPages})">${totalPages}</a></li>`;
+        html += `<li class="page-item"><a class="page-link" href="#" data-page="${totalPages}">${totalPages}</a></li>`;
     }
     
     // Next button
     html += `
         <li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
-            <a class="page-link" href="#" onclick="changePage(${currentPage + 1})" aria-label="Next">
+            <a class="page-link" href="#" ${currentPage < totalPages ? `data-page="${currentPage + 1}"` : ''} aria-label="Next">
                 <span aria-hidden="true">&raquo;</span>
             </a>
         </li>
