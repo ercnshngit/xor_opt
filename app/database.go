@@ -182,13 +182,13 @@ func (d *Database) UpdateMatrixResults(id int, boyarResult, paarResult, slpResul
 // GetMatrixByID retrieves a matrix by its ID
 func (d *Database) GetMatrixByID(id int) (*MatrixRecord, error) {
 	query := `
-	SELECT id, title, matrix_binary, matrix_hex, ham_xor_count, 
+	SELECT id, title, matrix_binary, matrix_hex, ham_xor_count,
 	       boyar_xor_count, boyar_depth, boyar_program,
 	       paar_xor_count, paar_program, slp_xor_count, slp_program,
 	       matrix_hash, created_at, updated_at
 	FROM matrix_records WHERE id = $1
 	`
-	
+
 	row := d.db.QueryRow(query, id)
 	return d.scanMatrixRecord(row)
 }
@@ -196,13 +196,13 @@ func (d *Database) GetMatrixByID(id int) (*MatrixRecord, error) {
 // GetMatrixByHash retrieves a matrix by its hash
 func (d *Database) GetMatrixByHash(hash string) (*MatrixRecord, error) {
 	query := `
-	SELECT id, title, matrix_binary, matrix_hex, ham_xor_count, 
+	SELECT id, title, matrix_binary, matrix_hex, ham_xor_count,
 	       boyar_xor_count, boyar_depth, boyar_program,
 	       paar_xor_count, paar_program, slp_xor_count, slp_program,
 	       matrix_hash, created_at, updated_at
 	FROM matrix_records WHERE matrix_hash = $1
 	`
-	
+
 	row := d.db.QueryRow(query, hash)
 	return d.scanMatrixRecord(row)
 }
@@ -213,7 +213,7 @@ func (d *Database) GetMatrices(page, limit int, titleFilter string, hamXorMin, h
 	var conditions []string
 	var args []interface{}
 	argIndex := 1
-
+	
 	if titleFilter != "" {
 		conditions = append(conditions, fmt.Sprintf("title ILIKE $%d", argIndex))
 		args = append(args, "%"+titleFilter+"%")
@@ -284,7 +284,7 @@ func (d *Database) GetMatrices(page, limit int, titleFilter string, hamXorMin, h
 	// Get paginated records
 	offset := (page - 1) * limit
 	query := fmt.Sprintf(`
-	SELECT id, title, matrix_binary, matrix_hex, ham_xor_count, 
+	SELECT id, title, matrix_binary, matrix_hex, ham_xor_count,
 	       boyar_xor_count, boyar_depth, boyar_program,
 	       paar_xor_count, paar_program, slp_xor_count, slp_program,
 	       matrix_hash, created_at, updated_at
@@ -753,6 +753,47 @@ func runSLPHeuristic(matrix [][]string) (*AlgResult, error) {
 // Global database instance
 var db *Database
 
+// createTables creates the necessary database tables
+func createTables(database *sql.DB) error {
+	createTableSQL := `
+	-- Create matrix_records table
+	CREATE TABLE IF NOT EXISTS matrix_records (
+		id SERIAL PRIMARY KEY,
+		title VARCHAR(255) NOT NULL,
+		matrix_binary TEXT NOT NULL,
+		matrix_hex TEXT NOT NULL,
+		ham_xor_count INTEGER NOT NULL,
+		boyar_xor_count INTEGER,
+		boyar_depth INTEGER,
+		boyar_program TEXT,
+		paar_xor_count INTEGER,
+		paar_program TEXT,
+		slp_xor_count INTEGER,
+		slp_program TEXT,
+		matrix_hash VARCHAR(32) NOT NULL UNIQUE,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	);
+
+	-- Create indexes for better performance
+	CREATE INDEX IF NOT EXISTS idx_matrix_records_hash ON matrix_records(matrix_hash);
+	CREATE INDEX IF NOT EXISTS idx_matrix_records_title ON matrix_records(title);
+	CREATE INDEX IF NOT EXISTS idx_matrix_records_ham_xor ON matrix_records(ham_xor_count);
+	CREATE INDEX IF NOT EXISTS idx_matrix_records_boyar_xor ON matrix_records(boyar_xor_count);
+	CREATE INDEX IF NOT EXISTS idx_matrix_records_paar_xor ON matrix_records(paar_xor_count);
+	CREATE INDEX IF NOT EXISTS idx_matrix_records_slp_xor ON matrix_records(slp_xor_count);
+	CREATE INDEX IF NOT EXISTS idx_matrix_records_created_at ON matrix_records(created_at);
+	`
+
+	_, err := database.Exec(createTableSQL)
+	if err != nil {
+		return fmt.Errorf("tablo oluşturma hatası: %v", err)
+	}
+
+	log.Printf("Veritabanı tabloları başarıyla oluşturuldu/kontrol edildi")
+	return nil
+}
+
 // InitDatabase initializes the database connection
 func InitDatabase() error {
 	// Get database connection parameters from environment
@@ -797,6 +838,12 @@ func InitDatabase() error {
 	}
 
 	log.Printf("PostgreSQL veritabanına başarıyla bağlanıldı: %s:%s/%s", host, port, dbname)
+
+	// Create tables if they don't exist
+	err = createTables(db.db)
+	if err != nil {
+		return fmt.Errorf("veritabanı tabloları oluşturulamadı: %v", err)
+	}
 
 	// Check if we need to import matrices using hash comparison
 	go func() {
