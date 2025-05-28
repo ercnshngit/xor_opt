@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gorilla/mux"
 )
@@ -77,83 +78,82 @@ func saveMatrixHandler(w http.ResponseWriter, r *http.Request) {
 
 // getMatricesHandler retrieves matrices with pagination and filtering
 func getMatricesHandler(w http.ResponseWriter, r *http.Request) {
+	startTime := time.Now()
 	w.Header().Set("Content-Type", "application/json")
+	
+	// Add cache headers for better performance
+	w.Header().Set("Cache-Control", "public, max-age=30")
+	w.Header().Set("ETag", fmt.Sprintf("\"%d\"", time.Now().Unix()/30)) // 30 second cache
 
 	// Parse query parameters
-	pageStr := r.URL.Query().Get("page")
-	limitStr := r.URL.Query().Get("limit")
+	page, err := strconv.Atoi(r.URL.Query().Get("page"))
+	if err != nil || page < 1 {
+		page = 1
+	}
+
+	limit, err := strconv.Atoi(r.URL.Query().Get("limit"))
+	if err != nil || limit < 1 || limit > 100 {
+		limit = 10
+	}
+
 	titleFilter := r.URL.Query().Get("title")
 
-	// Parse range filter parameters
-	hamXorMinStr := r.URL.Query().Get("ham_xor_min")
-	hamXorMaxStr := r.URL.Query().Get("ham_xor_max")
-	boyarXorMinStr := r.URL.Query().Get("boyar_xor_min")
-	boyarXorMaxStr := r.URL.Query().Get("boyar_xor_max")
-	paarXorMinStr := r.URL.Query().Get("paar_xor_min")
-	paarXorMaxStr := r.URL.Query().Get("paar_xor_max")
-	slpXorMinStr := r.URL.Query().Get("slp_xor_min")
-	slpXorMaxStr := r.URL.Query().Get("slp_xor_max")
-
-	page := 1
-	if pageStr != "" {
-		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
-			page = p
-		}
-	}
-
-	limit := 10
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
-			limit = l
-		}
-	}
-
-	// Parse range filter values
+	// Parse range filters
 	var hamXorMin, hamXorMax, boyarXorMin, boyarXorMax, paarXorMin, paarXorMax, slpXorMin, slpXorMax *int
 
-	if hamXorMinStr != "" {
-		if val, err := strconv.Atoi(hamXorMinStr); err == nil {
-			hamXorMin = &val
+	if val := r.URL.Query().Get("ham_xor_min"); val != "" {
+		if parsed, err := strconv.Atoi(val); err == nil {
+			hamXorMin = &parsed
 		}
 	}
-	if hamXorMaxStr != "" {
-		if val, err := strconv.Atoi(hamXorMaxStr); err == nil {
-			hamXorMax = &val
+
+	if val := r.URL.Query().Get("ham_xor_max"); val != "" {
+		if parsed, err := strconv.Atoi(val); err == nil {
+			hamXorMax = &parsed
 		}
 	}
-	if boyarXorMinStr != "" {
-		if val, err := strconv.Atoi(boyarXorMinStr); err == nil {
-			boyarXorMin = &val
+
+	if val := r.URL.Query().Get("boyar_xor_min"); val != "" {
+		if parsed, err := strconv.Atoi(val); err == nil {
+			boyarXorMin = &parsed
 		}
 	}
-	if boyarXorMaxStr != "" {
-		if val, err := strconv.Atoi(boyarXorMaxStr); err == nil {
-			boyarXorMax = &val
+
+	if val := r.URL.Query().Get("boyar_xor_max"); val != "" {
+		if parsed, err := strconv.Atoi(val); err == nil {
+			boyarXorMax = &parsed
 		}
 	}
-	if paarXorMinStr != "" {
-		if val, err := strconv.Atoi(paarXorMinStr); err == nil {
-			paarXorMin = &val
+
+	if val := r.URL.Query().Get("paar_xor_min"); val != "" {
+		if parsed, err := strconv.Atoi(val); err == nil {
+			paarXorMin = &parsed
 		}
 	}
-	if paarXorMaxStr != "" {
-		if val, err := strconv.Atoi(paarXorMaxStr); err == nil {
-			paarXorMax = &val
+
+	if val := r.URL.Query().Get("paar_xor_max"); val != "" {
+		if parsed, err := strconv.Atoi(val); err == nil {
+			paarXorMax = &parsed
 		}
 	}
-	if slpXorMinStr != "" {
-		if val, err := strconv.Atoi(slpXorMinStr); err == nil {
-			slpXorMin = &val
+
+	if val := r.URL.Query().Get("slp_xor_min"); val != "" {
+		if parsed, err := strconv.Atoi(val); err == nil {
+			slpXorMin = &parsed
 		}
 	}
-	if slpXorMaxStr != "" {
-		if val, err := strconv.Atoi(slpXorMaxStr); err == nil {
-			slpXorMax = &val
+
+	if val := r.URL.Query().Get("slp_xor_max"); val != "" {
+		if parsed, err := strconv.Atoi(val); err == nil {
+			slpXorMax = &parsed
 		}
 	}
+
+	log.Printf("📊 [API] GetMatrices request: page=%d, limit=%d, title_filter='%s'", page, limit, titleFilter)
 
 	matrices, total, err := db.GetMatrices(page, limit, titleFilter, hamXorMin, hamXorMax, boyarXorMin, boyarXorMax, paarXorMin, paarXorMax, slpXorMin, slpXorMax)
 	if err != nil {
+		log.Printf("❌ [API] GetMatrices error: %v", err)
 		http.Error(w, "Matrisler alınamadı: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -167,6 +167,9 @@ func getMatricesHandler(w http.ResponseWriter, r *http.Request) {
 		Limit:      limit,
 		TotalPages: totalPages,
 	}
+
+	duration := time.Since(startTime)
+	log.Printf("✅ [API] GetMatrices completed in %v: returned %d matrices (total: %d)", duration, len(matrices), total)
 
 	json.NewEncoder(w).Encode(response)
 }

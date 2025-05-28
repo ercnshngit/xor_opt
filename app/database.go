@@ -52,10 +52,19 @@ func NewDatabase(connectionString string) (*Database, error) {
 		return nil, err
 	}
 
+	// Configure connection pool for better performance
+	db.SetMaxOpenConns(25)                 // Maximum number of open connections
+	db.SetMaxIdleConns(10)                 // Maximum number of idle connections
+	db.SetConnMaxLifetime(5 * time.Minute) // Maximum lifetime of a connection
+	db.SetConnMaxIdleTime(1 * time.Minute) // Maximum idle time of a connection
+
 	// Test the connection
 	if err := db.Ping(); err != nil {
 		return nil, err
 	}
+
+	log.Printf("🔗 [DB] Database connection established with optimized pool settings")
+	log.Printf("🔗 [DB] Max open connections: 25, Max idle connections: 10")
 
 	database := &Database{db: db}
 	return database, nil
@@ -248,7 +257,7 @@ func (d *Database) GetMatrices(page, limit int, titleFilter string, hamXorMin, h
 	argIndex := 1
 	
 	if titleFilter != "" {
-		conditions = append(conditions, fmt.Sprintf("title ILIKE $%d", argIndex))
+		conditions = append(conditions, fmt.Sprintf("LOWER(title) LIKE LOWER($%d)", argIndex))
 		args = append(args, "%"+titleFilter+"%")
 		argIndex++
 	}
@@ -314,15 +323,24 @@ func (d *Database) GetMatrices(page, limit int, titleFilter string, hamXorMin, h
 		return nil, 0, err
 	}
 
-	// Get paginated records
+	// Get paginated records - optimized query without large fields for listing
 	offset := (page - 1) * limit
 	query := fmt.Sprintf(`
-	SELECT id, title, group_name, matrix_binary, matrix_hex, ham_xor_count, smallest_xor,
-	       boyar_xor_count, boyar_depth, boyar_program,
-	       paar_xor_count, paar_program, slp_xor_count, slp_program,
+	SELECT id, title, group_name, 
+	       CASE WHEN LENGTH(matrix_binary) > 100 THEN SUBSTRING(matrix_binary, 1, 100) || '...' ELSE matrix_binary END as matrix_binary,
+	       CASE WHEN LENGTH(matrix_hex) > 50 THEN SUBSTRING(matrix_hex, 1, 50) || '...' ELSE matrix_hex END as matrix_hex,
+	       ham_xor_count, smallest_xor,
+	       boyar_xor_count, boyar_depth, 
+	       CASE WHEN boyar_program IS NOT NULL THEN 'computed' ELSE NULL END as boyar_program,
+	       paar_xor_count, 
+	       CASE WHEN paar_program IS NOT NULL THEN 'computed' ELSE NULL END as paar_program,
+	       slp_xor_count, 
+	       CASE WHEN slp_program IS NOT NULL THEN 'computed' ELSE NULL END as slp_program,
 	       matrix_hash, inverse_matrix_id, inverse_matrix_hash, created_at, updated_at
 	FROM matrix_records %s
-	ORDER BY COALESCE(smallest_xor, ham_xor_count) ASC, created_at DESC
+	ORDER BY 
+	    CASE WHEN smallest_xor IS NOT NULL THEN smallest_xor ELSE ham_xor_count END ASC,
+	    created_at DESC
 	LIMIT $%d OFFSET $%d
 	`, whereClause, argIndex, argIndex+1)
 
@@ -336,7 +354,7 @@ func (d *Database) GetMatrices(page, limit int, titleFilter string, hamXorMin, h
 
 	var matrices []*MatrixRecord
 	for rows.Next() {
-		matrix, err := d.scanMatrixRecord(rows)
+		matrix, err := d.scanMatrixRecordOptimized(rows)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -348,6 +366,77 @@ func (d *Database) GetMatrices(page, limit int, titleFilter string, hamXorMin, h
 
 // scanMatrixRecord scans a row into a MatrixRecord
 func (d *Database) scanMatrixRecord(scanner interface{}) (*MatrixRecord, error) {
+	var record MatrixRecord
+	var groupName sql.NullString
+	var smallestXor, boyarXor, boyarDepth, paarXor, slpXor, inverseMatrixID sql.NullInt64
+	var boyarProgram, paarProgram, slpProgram, inverseMatrixHash sql.NullString
+
+	var err error
+	switch s := scanner.(type) {
+	case *sql.Row:
+		err = s.Scan(&record.ID, &record.Title, &groupName, &record.MatrixBinary, &record.MatrixHex,
+			&record.HamXorCount, &smallestXor, &boyarXor, &boyarDepth, &boyarProgram,
+			&paarXor, &paarProgram, &slpXor, &slpProgram,
+			&record.MatrixHash, &inverseMatrixID, &inverseMatrixHash, &record.CreatedAt, &record.UpdatedAt)
+	case *sql.Rows:
+		err = s.Scan(&record.ID, &record.Title, &groupName, &record.MatrixBinary, &record.MatrixHex,
+			&record.HamXorCount, &smallestXor, &boyarXor, &boyarDepth, &boyarProgram,
+			&paarXor, &paarProgram, &slpXor, &slpProgram,
+			&record.MatrixHash, &inverseMatrixID, &inverseMatrixHash, &record.CreatedAt, &record.UpdatedAt)
+	default:
+		return nil, fmt.Errorf("unsupported scanner type")
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Handle nullable fields
+	if groupName.Valid {
+		record.Group = groupName.String
+	}
+	if smallestXor.Valid {
+		val := int(smallestXor.Int64)
+		record.SmallestXor = &val
+	}
+	if boyarXor.Valid {
+		val := int(boyarXor.Int64)
+		record.BoyarXorCount = &val
+	}
+	if boyarDepth.Valid {
+		val := int(boyarDepth.Int64)
+		record.BoyarDepth = &val
+	}
+	if boyarProgram.Valid {
+		record.BoyarProgram = &boyarProgram.String
+	}
+	if paarXor.Valid {
+		val := int(paarXor.Int64)
+		record.PaarXorCount = &val
+	}
+	if paarProgram.Valid {
+		record.PaarProgram = &paarProgram.String
+	}
+	if slpXor.Valid {
+		val := int(slpXor.Int64)
+		record.SlpXorCount = &val
+	}
+	if slpProgram.Valid {
+		record.SlpProgram = &slpProgram.String
+	}
+	if inverseMatrixID.Valid {
+		val := int(inverseMatrixID.Int64)
+		record.InverseMatrixID = &val
+	}
+	if inverseMatrixHash.Valid {
+		record.InverseMatrixHash = &inverseMatrixHash.String
+	}
+
+	return &record, nil
+}
+
+// scanMatrixRecordOptimized scans a row into a MatrixRecord for listing (optimized)
+func (d *Database) scanMatrixRecordOptimized(scanner interface{}) (*MatrixRecord, error) {
 	var record MatrixRecord
 	var groupName sql.NullString
 	var smallestXor, boyarXor, boyarDepth, paarXor, slpXor, inverseMatrixID sql.NullInt64

@@ -174,6 +174,7 @@ function setupEventListeners() {
 
     // Calculate inverse button
     document.getElementById('calculateInverseBtn').addEventListener('click', function() {
+        console.log('Calculate inverse button clicked!');
         calculateMatrixInverse();
     });
 
@@ -199,6 +200,7 @@ function setupEventListeners() {
 // Load matrices from API
 async function loadMatrices() {
     try {
+        const startTime = performance.now();
         showLoading('Matrisler yükleniyor...');
         
         const params = new URLSearchParams({
@@ -236,19 +238,32 @@ async function loadMatrices() {
             params.append('slp_xor_max', currentFilters.slpXorMax);
         }
 
-        const response = await fetch(`/api/matrices?${params}`);
+        // Add cache busting parameter every 30 seconds
+        const cacheKey = Math.floor(Date.now() / 30000);
+        params.append('_cache', cacheKey);
+
+        const response = await fetch(`/api/matrices?${params}`, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+                'Cache-Control': 'max-age=30'
+            }
+        });
+        
         const data = await response.json();
 
         if (!response.ok) {
             throw new Error(data.message || 'Matrisler yüklenemedi');
         }
 
-        console.log('API Response:', {
+        const loadTime = performance.now() - startTime;
+        console.log(`📊 API Response (${loadTime.toFixed(2)}ms):`, {
             total: data.total,
             page: data.page,
             total_pages: data.total_pages,
             currentPage: currentPage,
-            matrices_count: data.matrices.length
+            matrices_count: data.matrices.length,
+            load_time: `${loadTime.toFixed(2)}ms`
         });
 
         // If current page is greater than total pages, reset to page 1
@@ -267,6 +282,11 @@ async function loadMatrices() {
         
         // Update URL with current parameters
         updateURL();
+        
+        // Show performance info if load time is high
+        if (loadTime > 1000) {
+            console.warn(`⚠️ Slow API response: ${loadTime.toFixed(2)}ms`);
+        }
         
     } catch (error) {
         console.error('Error loading matrices:', error);
@@ -1239,10 +1259,18 @@ async function bulkRecalculate() {
 
 // Calculate matrix inverse
 async function calculateMatrixInverse() {
-    if (!currentMatrixId) return;
+    console.log('calculateMatrixInverse called, currentMatrixId:', currentMatrixId);
+    
+    if (!currentMatrixId) {
+        console.error('currentMatrixId is null or undefined');
+        showAlert('Matris ID bulunamadı. Lütfen önce bir matris seçin.', 'warning');
+        return;
+    }
     
     try {
         showLoading('Ters matris hesaplanıyor...');
+        
+        console.log('Making API request to:', `/api/matrices/${currentMatrixId}/inverse`);
         
         const response = await fetch(`/api/matrices/${currentMatrixId}/inverse`, {
             method: 'POST',
@@ -1251,7 +1279,11 @@ async function calculateMatrixInverse() {
             }
         });
         
+        console.log('API response status:', response.status);
+        
         const data = await response.json();
+        
+        console.log('API response data:', data);
         
         if (!response.ok) {
             throw new Error(data.message || 'Ters matris hesaplama başarısız');
