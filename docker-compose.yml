@@ -16,6 +16,14 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '2.0'
+        reservations:
+          memory: 256M
+          cpus: '0.5'
 
   app:
     build:
@@ -32,6 +40,7 @@ services:
       - DB_PASSWORD=xor_password
       - DB_SSLMODE=disable
       - MATRICES_DATA_PATH=/app/matrices-data
+      - GOGC=50
     volumes:
       - ./app/matrices-data:/app/matrices-data:ro
       - ./app/web:/app/web:ro
@@ -39,6 +48,14 @@ services:
       db:
         condition: service_healthy
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '3.0'
+        reservations:
+          memory: 1G
+          cpus: '1.0'
 
 volumes:
   postgres_data: 

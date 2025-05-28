@@ -37,10 +37,10 @@ type AlgResult struct {
 	Depth       int      `json:"depth,omitempty"`
 }
 
-// Constants for array sizes
+// Constants for array sizes - optimized for 4-core 16GB server
 const (
-	MAX_ARRAY_SIZE = 1000
-	MAX_ITERATIONS = 10000 // Sonsuz döngü koruması
+	MAX_ARRAY_SIZE = 4000  // Increased for better performance on 16GB RAM
+	MAX_ITERATIONS = 50000 // Increased for more thorough calculations
 )
 
 // BoyarSLP implementation

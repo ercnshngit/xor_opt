@@ -17,7 +17,9 @@
     "skip_existing": true,
     "batch_size": 10,
     "auto_calculate": true,
-    "algorithms": ["boyar", "paar", "slp"]
+    "algorithms": ["boyar", "paar", "slp"],
+    "max_workers": 8,
+    "worker_queue_size": 200
   },
   "server": {
     "port": ":3000",

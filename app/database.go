@@ -52,19 +52,19 @@ func NewDatabase(connectionString string) (*Database, error) {
 		return nil, err
 	}
 
-	// Configure connection pool for better performance
-	db.SetMaxOpenConns(25)                 // Maximum number of open connections
-	db.SetMaxIdleConns(10)                 // Maximum number of idle connections
-	db.SetConnMaxLifetime(5 * time.Minute) // Maximum lifetime of a connection
-	db.SetConnMaxIdleTime(1 * time.Minute) // Maximum idle time of a connection
+	// Configure connection pool for better performance - optimized for 4-core 16GB server
+	db.SetMaxOpenConns(100)                // Increased for 4-core server
+	db.SetMaxIdleConns(40)                 // Increased for better concurrency
+	db.SetConnMaxLifetime(15 * time.Minute) // Increased lifetime
+	db.SetConnMaxIdleTime(5 * time.Minute)  // Increased idle time
 
 	// Test the connection
 	if err := db.Ping(); err != nil {
 		return nil, err
 	}
 
-	log.Printf("🔗 [DB] Database connection established with optimized pool settings")
-	log.Printf("🔗 [DB] Max open connections: 25, Max idle connections: 10")
+	log.Printf("🔗 [DB] Database connection established with optimized pool settings for 4-core 16GB server")
+	log.Printf("🔗 [DB] Max open connections: 100, Max idle connections: 40")
 
 	database := &Database{db: db}
 	return database, nil
@@ -694,58 +694,25 @@ func (d *Database) saveMatrixFromImport(title string, matrix [][]string, group s
 		return err
 	}
 
-	// Calculate algorithms for the newly saved matrix
-	log.Printf("🧮 [IMPORT] Algoritma hesaplamaları başlıyor: %s", title)
-	
-	// Run algorithms in background
-	go func() {
-		algorithmStartTime := time.Now()
+	// Queue algorithm calculation using worker pool
+	if algorithmWorkerPool != nil {
+		log.Printf("🧮 [IMPORT] Algoritma hesaplamaları kuyruğa ekleniyor: %s", title)
 		
-		// Calculate Boyar SLP
-		boyarStartTime := time.Now()
-		boyarResult, err := runBoyarSLP(matrix)
-		boyarDuration := time.Since(boyarStartTime)
-		if err != nil {
-			log.Printf("❌ [BOYAR] %s için Boyar SLP hesaplanamadı (%v): %v", title, boyarDuration, err)
-		} else {
-			log.Printf("✅ [BOYAR] %s için Boyar SLP tamamlandı (%v) - XOR: %d", title, boyarDuration, boyarResult.XorCount)
+		job := AlgorithmJob{
+			MatrixID: savedMatrix.ID,
+			Title:    title,
+			Matrix:   matrix,
 		}
-
-		// Calculate Paar Algorithm
-		paarStartTime := time.Now()
-		paarResult, err := runPaarAlgorithm(matrix)
-		paarDuration := time.Since(paarStartTime)
-		if err != nil {
-			log.Printf("❌ [PAAR] %s için Paar algoritması hesaplanamadı (%v): %v", title, paarDuration, err)
-		} else {
-			log.Printf("✅ [PAAR] %s için Paar algoritması tamamlandı (%v) - XOR: %d", title, paarDuration, paarResult.XorCount)
-		}
-
-		// Calculate SLP Heuristic
-		slpStartTime := time.Now()
-		slpResult, err := runSLPHeuristic(matrix)
-		slpDuration := time.Since(slpStartTime)
-		if err != nil {
-			log.Printf("❌ [SLP] %s için SLP Heuristic hesaplanamadı (%v): %v", title, slpDuration, err)
-		} else {
-			log.Printf("✅ [SLP] %s için SLP Heuristic tamamlandı (%v) - XOR: %d", title, slpDuration, slpResult.XorCount)
-		}
-
-		// Update matrix with results
-		updateStartTime := time.Now()
-		err = d.UpdateMatrixResults(savedMatrix.ID, boyarResult, paarResult, slpResult)
-		updateDuration := time.Since(updateStartTime)
 		
-		totalAlgorithmDuration := time.Since(algorithmStartTime)
-		
-		if err != nil {
-			log.Printf("❌ [UPDATE] %s için sonuçlar kaydedilemedi (%v): %v", title, updateDuration, err)
-		} else {
-			log.Printf("✅ [UPDATE] %s için sonuçlar kaydedildi (%v)", title, updateDuration)
-			log.Printf("🎯 [TOPLAM] %s için tüm algoritmalar tamamlandı (Toplam: %v, Boyar: %v, Paar: %v, SLP: %v)", 
-				title, totalAlgorithmDuration, boyarDuration, paarDuration, slpDuration)
+		select {
+		case algorithmWorkerPool.jobs <- job:
+			log.Printf("✅ [IMPORT] Algoritma işi kuyruğa eklendi: %s", title)
+		default:
+			log.Printf("⚠️  [IMPORT] Algoritma kuyruğu dolu, atlanıyor: %s", title)
 		}
-	}()
+	} else {
+		log.Printf("⚠️  [IMPORT] Worker pool başlatılmamış, algoritmalar atlanıyor: %s", title)
+	}
 
 	totalDuration := time.Since(startTime)
 	log.Printf("📈 [IMPORT] Matris işleme tamamlandı (%v): %s", totalDuration, title)
@@ -956,6 +923,116 @@ func runSLPHeuristic(matrix [][]string) (*AlgResult, error) {
 	return &result, nil
 }
 
+// Worker pool for algorithm calculations
+type AlgorithmWorker struct {
+	jobs    chan AlgorithmJob
+	results chan AlgorithmResult
+	quit    chan bool
+}
+
+type AlgorithmJob struct {
+	MatrixID int
+	Title    string
+	Matrix   [][]string
+}
+
+type AlgorithmResult struct {
+	MatrixID     int
+	BoyarResult  *AlgResult
+	PaarResult   *AlgResult
+	SlpResult    *AlgResult
+	Error        error
+}
+
+var (
+	algorithmWorkerPool *AlgorithmWorker
+	maxWorkers          = 8 // 4-core 16GB sunucu için optimize edildi (2x core count)
+)
+
+// InitAlgorithmWorkerPool initializes the worker pool
+func InitAlgorithmWorkerPool() {
+	algorithmWorkerPool = &AlgorithmWorker{
+		jobs:    make(chan AlgorithmJob, 100),
+		results: make(chan AlgorithmResult, 100),
+		quit:    make(chan bool),
+	}
+
+	// Start workers
+	for i := 0; i < maxWorkers; i++ {
+		go algorithmWorkerPool.worker(i)
+	}
+
+	// Start result processor
+	go algorithmWorkerPool.processResults()
+}
+
+func (w *AlgorithmWorker) worker(id int) {
+	log.Printf("🔧 [WORKER-%d] Algorithm worker başlatıldı", id)
+	for {
+		select {
+		case job := <-w.jobs:
+			log.Printf("🔧 [WORKER-%d] İşleniyor: %s", id, job.Title)
+			
+			// Calculate algorithms
+			boyarResult, boyarErr := runBoyarSLP(job.Matrix)
+			if boyarErr != nil {
+				log.Printf("❌ [WORKER-%d] Boyar hatası: %v", id, boyarErr)
+			} else {
+				log.Printf("✅ [WORKER-%d] Boyar SLP tamamlandı - XOR: %d", id, boyarResult.XorCount)
+			}
+			
+			paarResult, paarErr := runPaarAlgorithm(job.Matrix)
+			if paarErr != nil {
+				log.Printf("❌ [WORKER-%d] Paar hatası: %v", id, paarErr)
+			} else {
+				log.Printf("✅ [WORKER-%d] Paar algoritması tamamlandı - XOR: %d", id, paarResult.XorCount)
+			}
+			
+			slpResult, slpErr := runSLPHeuristic(job.Matrix)
+			if slpErr != nil {
+				log.Printf("❌ [WORKER-%d] SLP hatası: %v", id, slpErr)
+			} else {
+				log.Printf("✅ [WORKER-%d] SLP Heuristic tamamlandı - XOR: %d", id, slpResult.XorCount)
+			}
+			
+			// Send result
+			result := AlgorithmResult{
+				MatrixID:    job.MatrixID,
+				BoyarResult: boyarResult,
+				PaarResult:  paarResult,
+				SlpResult:   slpResult,
+			}
+			
+			if boyarErr != nil || paarErr != nil || slpErr != nil {
+				result.Error = fmt.Errorf("algorithm errors: boyar=%v, paar=%v, slp=%v", boyarErr, paarErr, slpErr)
+			}
+			
+			w.results <- result
+			log.Printf("✅ [WORKER-%d] Tamamlandı: %s", id, job.Title)
+			
+		case <-w.quit:
+			log.Printf("🔧 [WORKER-%d] Kapatılıyor", id)
+			return
+		}
+	}
+}
+
+func (w *AlgorithmWorker) processResults() {
+	for result := range w.results {
+		if result.Error != nil {
+			log.Printf("❌ [RESULT] Matris %d için algoritma hatası: %v", result.MatrixID, result.Error)
+			continue
+		}
+		
+		err := db.UpdateMatrixResults(result.MatrixID, result.BoyarResult, result.PaarResult, result.SlpResult)
+		if err != nil {
+			log.Printf("❌ [RESULT] Matris %d için sonuçlar kaydedilemedi: %v", result.MatrixID, err)
+		} else {
+			log.Printf("✅ [RESULT] Matris %d için sonuçlar kaydedildi", result.MatrixID)
+		}
+	}
+}
+
 // Global database instance
 var db *Database
 
@@ -1087,48 +1164,40 @@ func updateSmallestXorForExistingRecords(database *sql.DB) {
 
 // InitDatabase initializes the database connection
 func InitDatabase(config *Config) error {
-	// Get database connection parameters from environment
-	host := os.Getenv("DB_HOST")
-	if host == "" {
-		host = "localhost"
+	// Build connection string from config
+	connectionString := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+		config.Database.Host, config.Database.Port, config.Database.User,
+		config.Database.Password, config.Database.DBName, config.Database.SSLMode)
+
+	// Override with environment variables if they exist
+	if host := os.Getenv("DB_HOST"); host != "" {
+		connectionString = strings.Replace(connectionString, "host="+config.Database.Host, "host="+host, 1)
 	}
-	
-	port := os.Getenv("DB_PORT")
-	if port == "" {
-		port = "5432"
+	if port := os.Getenv("DB_PORT"); port != "" {
+		connectionString = strings.Replace(connectionString, fmt.Sprintf("port=%d", config.Database.Port), "port="+port, 1)
 	}
-	
-	dbname := os.Getenv("DB_NAME")
-	if dbname == "" {
-		dbname = "xor_opt"
+	if user := os.Getenv("DB_USER"); user != "" {
+		connectionString = strings.Replace(connectionString, "user="+config.Database.User, "user="+user, 1)
 	}
-	
-	user := os.Getenv("DB_USER")
-	if user == "" {
-		user = "xor_user"
+	if password := os.Getenv("DB_PASSWORD"); password != "" {
+		connectionString = strings.Replace(connectionString, "password="+config.Database.Password, "password="+password, 1)
 	}
-	
-	password := os.Getenv("DB_PASSWORD")
-	if password == "" {
-		password = "xor_password"
+	if dbname := os.Getenv("DB_NAME"); dbname != "" {
+		connectionString = strings.Replace(connectionString, "dbname="+config.Database.DBName, "dbname="+dbname, 1)
 	}
-	
-	sslmode := os.Getenv("DB_SSLMODE")
-	if sslmode == "" {
-		sslmode = "disable"
+	if sslmode := os.Getenv("DB_SSLMODE"); sslmode != "" {
+		connectionString = strings.Replace(connectionString, "sslmode="+config.Database.SSLMode, "sslmode="+sslmode, 1)
 	}
 
-	// Create connection string
-	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
-		host, port, user, password, dbname, sslmode)
+	log.Printf("🔗 [DB] Veritabanına bağlanılıyor...")
 
 	var err error
-	db, err = NewDatabase(connStr)
+	db, err = NewDatabase(connectionString)
 	if err != nil {
 		return fmt.Errorf("veritabanı bağlantısı kurulamadı: %v", err)
 	}
 
-	log.Printf("PostgreSQL veritabanına başarıyla bağlanıldı: %s:%s/%s", host, port, dbname)
+	log.Printf("✅ [DB] Veritabanı bağlantısı başarılı")
 
 	// Create tables if they don't exist
 	err = createTables(db.db)
@@ -1136,7 +1205,12 @@ func InitDatabase(config *Config) error {
 		return fmt.Errorf("veritabanı tabloları oluşturulamadı: %v", err)
 	}
 
-	// Check if we need to import matrices using hash comparison (only if enabled in config)
+	// Initialize algorithm worker pool
+	log.Printf("🔧 [WORKER] Algorithm worker pool başlatılıyor...")
+	InitAlgorithmWorkerPool()
+	log.Printf("✅ [WORKER] Algorithm worker pool başlatıldı")
+
+	// Auto import data if enabled
 	if config != nil && config.Import.Enabled && config.Import.ProcessOnStart {
 		go func() {
 			time.Sleep(5 * time.Second) // Wait a bit for the application to fully start
