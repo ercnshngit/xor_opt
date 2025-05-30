@@ -1164,11 +1164,13 @@ func main() {
 	// New database API endpoints
 	r.HandleFunc("/api/matrices", getMatricesHandler).Methods("GET")
 	r.HandleFunc("/api/matrices", saveMatrixHandler).Methods("POST")
-	r.HandleFunc("/api/matrices/{id:[0-9]+}", getMatrixHandler).Methods("GET")
+	r.HandleFunc("/api/matrices/{id:[0-9]+}", getMatrixByIdHandler).Methods("GET")
 	r.HandleFunc("/api/matrices/{id:[0-9]+}/inverse", calculateInverseHandler).Methods("POST")
 	r.HandleFunc("/api/matrices/process", processAndSaveMatrixHandler).Methods("POST")
 	r.HandleFunc("/api/matrices/recalculate", recalculateHandler).Methods("POST")
 	r.HandleFunc("/api/matrices/bulk-recalculate", bulkRecalculateHandler).Methods("POST")
+	r.HandleFunc("/api/duplicates", getDuplicateMatricesHandler).Methods("GET")
+	r.HandleFunc("/api/groups", getGroupsHandler).Methods("GET")
 
 	// Config API endpoints
 	r.HandleFunc("/api/config", func(w http.ResponseWriter, r *http.Request) {
@@ -1207,6 +1209,8 @@ func main() {
 	log.Printf("  POST /api/matrices/process - Process and save matrix")
 	log.Printf("  POST /api/matrices/recalculate - Recalculate algorithms")
 	log.Printf("  POST /api/matrices/bulk-recalculate - Bulk recalculate algorithms")
+	log.Printf("  GET  /api/duplicates - Get all duplicate matrices")
+	log.Printf("  GET  /api/groups - Get all groups")
 	log.Printf("  GET  /api/config - Get current configuration")
 	log.Printf("  POST /api/config/import - Trigger manual import")
 	log.Printf("=== Backend hazır, istekleri bekleniyor ===")

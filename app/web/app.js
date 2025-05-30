@@ -2,8 +2,10 @@
 let currentPage = 1;
 let currentLimit = 10;
 let currentFilter = '';
+let currentGroupFilter = '';
 let currentMatrixId = null;
 let currentFilters = {
+    groupFilter: '',
     hamXorMin: null,
     hamXorMax: null,
     boyarXorMin: null,
@@ -14,10 +16,14 @@ let currentFilters = {
     slpXorMax: null
 };
 
+// Global variables for scroll management
+let scrollPosition = 0;
+
 // Initialize the application
 document.addEventListener('DOMContentLoaded', function() {
     // Load URL parameters
     loadFromURL();
+    loadGroups(); // Load groups first
     loadMatrices();
     setupEventListeners();
     
@@ -44,6 +50,14 @@ function loadFromURL() {
     if (search) {
         currentFilter = search;
         document.getElementById('searchInput').value = search;
+    }
+    
+    // Load group filter
+    const group = urlParams.get('group');
+    if (group) {
+        currentGroupFilter = group;
+        currentFilters.groupFilter = group;
+        // Group filter will be set after groups are loaded
     }
     
     // Load range filters
@@ -102,6 +116,11 @@ function updateURL() {
     // Add search filter
     if (currentFilter) {
         params.set('search', currentFilter);
+    }
+    
+    // Add group filter
+    if (currentFilters.groupFilter) {
+        params.set('group', currentFilters.groupFilter);
     }
     
     // Add range filters
@@ -185,6 +204,13 @@ function setupEventListeners() {
         loadMatrices();
     });
 
+    // Group filter selector
+    document.getElementById('groupFilter').addEventListener('change', function() {
+        currentFilters.groupFilter = this.value;
+        currentPage = 1; // Reset to first page when changing group filter
+        loadMatrices();
+    });
+
     // Pagination event delegation
     document.addEventListener('click', function(e) {
         if (e.target.matches('.page-link[data-page]')) {
@@ -201,6 +227,7 @@ function setupEventListeners() {
 async function loadMatrices() {
     try {
         const startTime = performance.now();
+        console.log('🔄 loadMatrices started, showing loading...');
         showLoading('Matrisler yükleniyor...');
         
         const params = new URLSearchParams({
@@ -211,7 +238,12 @@ async function loadMatrices() {
         if (currentFilter) {
             params.append('title', currentFilter);
         }
-
+        
+        // Add group filter
+        if (currentFilters.groupFilter) {
+            params.append('group', currentFilters.groupFilter);
+        }
+        
         // Add range filters
         if (currentFilters.hamXorMin !== null) {
             params.append('ham_xor_min', currentFilters.hamXorMin);
@@ -242,6 +274,7 @@ async function loadMatrices() {
         const cacheKey = Math.floor(Date.now() / 30000);
         params.append('_cache', cacheKey);
 
+        console.log('📡 Making API request...');
         const response = await fetch(`/api/matrices?${params}`, {
             method: 'GET',
             headers: {
@@ -250,6 +283,7 @@ async function loadMatrices() {
             }
         });
         
+        console.log('📡 API response received, status:', response.status);
         const data = await response.json();
 
         if (!response.ok) {
@@ -270,6 +304,8 @@ async function loadMatrices() {
         if (currentPage > data.total_pages && data.total_pages > 0) {
             console.log('Current page is greater than total pages, resetting to page 1');
             currentPage = 1;
+            // Hide loading before recursive call to prevent modal stacking
+            hideLoading();
             loadMatrices(); // Reload with page 1
             return;
         }
@@ -277,6 +313,7 @@ async function loadMatrices() {
         // Sync currentPage with API response
         currentPage = data.page;
 
+        console.log('🎨 Displaying matrices...');
         displayMatrices(data.matrices);
         setupPagination(data.page, data.total_pages, data.total);
         
@@ -288,10 +325,13 @@ async function loadMatrices() {
             console.warn(`⚠️ Slow API response: ${loadTime.toFixed(2)}ms`);
         }
         
+        console.log('✅ loadMatrices completed successfully');
+        
     } catch (error) {
-        console.error('Error loading matrices:', error);
+        console.error('❌ Error loading matrices:', error);
         showAlert('Matrisler yüklenirken hata oluştu: ' + error.message, 'danger');
     } finally {
+        console.log('🔄 loadMatrices finally block, hiding loading...');
         hideLoading();
     }
 }
@@ -579,6 +619,9 @@ function parseSimpleMatrixFormat(matrixData) {
 // View matrix details
 async function viewMatrix(id) {
     try {
+        // Scroll pozisyonunu kaydet
+        scrollPosition = window.pageYOffset || document.documentElement.scrollTop;
+        
         showLoading('Matris detayları yükleniyor...');
         
         const response = await fetch(`/api/matrices/${id}`);
@@ -592,11 +635,24 @@ async function viewMatrix(id) {
         displayMatrixDetails(matrix);
         
         const modal = new bootstrap.Modal(document.getElementById('matrixModal'));
+        
+        // Modal kapatıldığında scroll pozisyonunu restore et
+        const modalElement = document.getElementById('matrixModal');
+        modalElement.addEventListener('hidden.bs.modal', function () {
+            // Scroll pozisyonunu restore et
+            window.scrollTo(0, scrollPosition);
+            // Body'nin style'larını temizle
+            document.body.style.paddingRight = '';
+            document.body.style.overflow = '';
+        }, { once: true });
+        
         modal.show();
         
     } catch (error) {
         console.error('Error viewing matrix:', error);
         showAlert('Matris detayları yüklenirken hata oluştu: ' + error.message, 'danger');
+        // Hata durumunda da scroll pozisyonunu restore et
+        window.scrollTo(0, scrollPosition);
     } finally {
         hideLoading();
     }
@@ -607,6 +663,37 @@ function displayMatrixDetails(matrix) {
     document.getElementById('matrixModalTitle').textContent = matrix.title;
     
     const modalBody = document.getElementById('matrixModalBody');
+    
+    // Duplicate matrices section
+    let duplicatesHtml = '';
+    if (matrix.duplicates && matrix.duplicates.length > 0) {
+        duplicatesHtml = `
+        <div class="mt-3 p-3 border rounded bg-warning bg-opacity-10">
+            <h6 class="text-warning"><i class="fas fa-copy me-2"></i>Duplicate Matrisler (${matrix.duplicates.length})</h6>
+            <div class="table-responsive">
+                <table class="table table-sm table-striped">
+                    <thead>
+                        <tr>
+                            <th>Başlık</th>
+                            <th>Grup</th>
+                            <th>Oluşturulma</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${matrix.duplicates.map(dup => `
+                        <tr>
+                            <td><code>${dup.duplicate_title}</code></td>
+                            <td><span class="badge bg-secondary">${dup.duplicate_group || 'Belirtilmemiş'}</span></td>
+                            <td><small class="text-muted">${formatDate(dup.created_at)}</small></td>
+                        </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+            <small class="text-muted">Bu matris ile aynı hash değerine sahip diğer matrisler</small>
+        </div>
+        `;
+    }
     
     const html = `
         <div class="row">
@@ -623,6 +710,8 @@ function displayMatrixDetails(matrix) {
                     <strong>Hash:</strong><br>
                     <code>${matrix.matrix_hash}</code>
                 </div>
+                
+                ${duplicatesHtml}
                 
                 ${matrix.inverse_matrix_id ? `
                 <div class="mt-3 p-3 border rounded bg-light">
@@ -692,6 +781,9 @@ async function recalculateMatrix() {
     if (!currentMatrixId) return;
     
     try {
+        // Scroll pozisyonunu kaydet
+        scrollPosition = window.pageYOffset || document.documentElement.scrollTop;
+        
         showLoading('Algoritmalar yeniden hesaplanıyor...');
         
         const response = await fetch('/api/matrices/recalculate', {
@@ -722,6 +814,8 @@ async function recalculateMatrix() {
     } catch (error) {
         console.error('Error recalculating matrix:', error);
         showAlert('Yeniden hesaplama sırasında hata oluştu: ' + error.message, 'danger');
+        // Hata durumunda scroll pozisyonunu restore et
+        window.scrollTo(0, scrollPosition);
     } finally {
         hideLoading();
     }
@@ -1046,55 +1140,98 @@ function showBulkUploadResults(results) {
 
 // Utility functions
 function showLoading(text = 'Yükleniyor...') {
-    document.getElementById('loadingText').textContent = text;
+    console.log('🔄 showLoading called with text:', text);
+    
     const modalElement = document.getElementById('loadingModal');
-    
-    // Manuel olarak modal'ı göster
-    modalElement.style.display = 'block';
-    modalElement.classList.add('show');
-    modalElement.setAttribute('aria-modal', 'true');
-    modalElement.setAttribute('role', 'dialog');
-    modalElement.removeAttribute('aria-hidden');
-    
-    // Backdrop ekle
-    let backdrop = document.querySelector('.modal-backdrop');
-    if (!backdrop) {
-        backdrop = document.createElement('div');
-        backdrop.className = 'modal-backdrop fade show';
-        document.body.appendChild(backdrop);
+    if (!modalElement) {
+        console.error('❌ loadingModal element not found');
+        return;
     }
     
-    // Body'ye modal-open class'ı ekle
-    document.body.classList.add('modal-open');
-    document.body.style.overflow = 'hidden';
+    // Önce mevcut modal'ı kapat
+    const existingModal = bootstrap.Modal.getInstance(modalElement);
+    if (existingModal) {
+        console.log('⚠️ Existing modal found, hiding first...');
+        existingModal.hide();
+    }
+    
+    // Text'i güncelle
+    const loadingTextElement = document.getElementById('loadingText');
+    if (loadingTextElement) {
+        loadingTextElement.textContent = text;
+    }
+    
+    // Kısa bir gecikme sonra yeni modal'ı aç
+    setTimeout(() => {
+        console.log('✅ Creating new modal instance...');
+        // Bootstrap modal kullan
+        const modal = new bootstrap.Modal(modalElement, {
+            backdrop: 'static',
+            keyboard: false
+        });
+        modal.show();
+        console.log('✅ Modal shown');
+    }, 100);
 }
 
 function hideLoading() {
+    console.log('🔄 hideLoading called');
     const modalElement = document.getElementById('loadingModal');
     
-    // Manuel olarak modal'ı gizle
-    modalElement.style.display = 'none';
-    modalElement.classList.remove('show');
-    modalElement.setAttribute('aria-hidden', 'true');
-    modalElement.removeAttribute('aria-modal');
-    modalElement.removeAttribute('role');
-    
-    // Backdrop'ı kaldır
-    const backdrop = document.querySelector('.modal-backdrop');
-    if (backdrop) {
-        backdrop.remove();
+    if (!modalElement) {
+        console.error('❌ loadingModal element not found');
+        return;
     }
     
-    // Body'den modal-open class'ını kaldır
-    document.body.classList.remove('modal-open');
-    document.body.style.overflow = '';
-    document.body.style.paddingRight = '';
-    
-    // Bootstrap modal instance varsa temizle
+    // Bootstrap modal instance'ını al ve kapat
     const modal = bootstrap.Modal.getInstance(modalElement);
     if (modal) {
-        modal.dispose();
+        console.log('✅ Found existing modal instance, hiding...');
+        modal.hide();
+    } else {
+        console.log('⚠️ No modal instance found, trying to create and hide...');
+        // Eğer instance yoksa, modal açık olabilir ama instance kaybolmuş olabilir
+        // Bu durumda manuel olarak kapatmaya çalış
+        const newModal = new bootstrap.Modal(modalElement);
+        newModal.hide();
     }
+    
+    // Modal tamamen kapandıktan sonra temizlik yap
+    modalElement.addEventListener('hidden.bs.modal', function () {
+        console.log('✅ Modal hidden event fired, cleaning up...');
+        // Body'nin style'larını temizle (Bootstrap bazen padding bırakabiliyor)
+        document.body.style.paddingRight = '';
+        document.body.style.overflow = '';
+        document.body.classList.remove('modal-open');
+        
+        // Backdrop'u da temizle
+        const backdrop = document.querySelector('.modal-backdrop');
+        if (backdrop) {
+            backdrop.remove();
+            console.log('✅ Modal backdrop removed');
+        }
+    }, { once: true });
+    
+    // Fallback: 1 saniye sonra zorla temizle
+    setTimeout(() => {
+        if (modalElement.classList.contains('show')) {
+            console.log('⚠️ Modal still showing after 1 second, forcing cleanup...');
+            modalElement.classList.remove('show');
+            modalElement.style.display = 'none';
+            modalElement.setAttribute('aria-hidden', 'true');
+            modalElement.removeAttribute('aria-modal');
+            modalElement.removeAttribute('role');
+            
+            document.body.style.paddingRight = '';
+            document.body.style.overflow = '';
+            document.body.classList.remove('modal-open');
+            
+            const backdrop = document.querySelector('.modal-backdrop');
+            if (backdrop) {
+                backdrop.remove();
+            }
+        }
+    }, 1000);
 }
 
 function showAlert(message, type = 'info') {
@@ -1157,6 +1294,7 @@ window.checkModalState = function() {
 // Filter functions
 function applyFilters() {
     // Get filter values
+    const groupFilter = document.getElementById('groupFilter').value;
     const hamXorMin = document.getElementById('hamXorMin').value;
     const hamXorMax = document.getElementById('hamXorMax').value;
     const boyarXorMin = document.getElementById('boyarXorMin').value;
@@ -1167,6 +1305,7 @@ function applyFilters() {
     const slpXorMax = document.getElementById('slpXorMax').value;
 
     // Update current filters
+    currentFilters.groupFilter = groupFilter;
     currentFilters.hamXorMin = hamXorMin ? parseInt(hamXorMin) : null;
     currentFilters.hamXorMax = hamXorMax ? parseInt(hamXorMax) : null;
     currentFilters.boyarXorMin = boyarXorMin ? parseInt(boyarXorMin) : null;
@@ -1190,6 +1329,7 @@ function applyFilters() {
 
 function clearFilters() {
     // Clear all filter inputs
+    document.getElementById('groupFilter').value = '';
     document.getElementById('hamXorMin').value = '';
     document.getElementById('hamXorMax').value = '';
     document.getElementById('boyarXorMin').value = '';
@@ -1201,6 +1341,7 @@ function clearFilters() {
 
     // Clear current filters
     currentFilters = {
+        groupFilter: '',
         hamXorMin: null,
         hamXorMax: null,
         boyarXorMin: null,
@@ -1268,6 +1409,9 @@ async function calculateMatrixInverse() {
     }
     
     try {
+        // Scroll pozisyonunu kaydet
+        scrollPosition = window.pageYOffset || document.documentElement.scrollTop;
+        
         showLoading('Ters matris hesaplanıyor...');
         
         console.log('Making API request to:', `/api/matrices/${currentMatrixId}/inverse`);
@@ -1302,7 +1446,152 @@ async function calculateMatrixInverse() {
     } catch (error) {
         console.error('Error calculating matrix inverse:', error);
         showAlert('Ters matris hesaplama sırasında hata oluştu: ' + error.message, 'danger');
+        // Hata durumunda scroll pozisyonunu restore et
+        window.scrollTo(0, scrollPosition);
     } finally {
         hideLoading();
     }
+}
+
+// Load groups for filter dropdown
+async function loadGroups() {
+    try {
+        const response = await fetch('/api/groups');
+        if (!response.ok) {
+            throw new Error('Gruplar yüklenemedi');
+        }
+        
+        const groups = await response.json();
+        const groupSelect = document.getElementById('groupFilter');
+        
+        // Clear existing options except "Tüm Gruplar"
+        groupSelect.innerHTML = '<option value="">Tüm Gruplar</option>';
+        
+        // Add groups to dropdown
+        groups.forEach(group => {
+            const option = document.createElement('option');
+            option.value = group;
+            option.textContent = group;
+            groupSelect.appendChild(option);
+        });
+        
+        // Set selected value if we have a group filter from URL
+        if (currentFilters.groupFilter) {
+            groupSelect.value = currentFilters.groupFilter;
+        }
+        
+        console.log('Gruplar yüklendi:', groups.length, 'grup');
+    } catch (error) {
+        console.error('Grup yükleme hatası:', error);
+        showAlert('Gruplar yüklenirken hata oluştu: ' + error.message, 'warning');
+    }
+}
+
+// Load duplicate matrices
+async function loadDuplicateMatrices() {
+    try {
+        showLoading('Duplicate matrisler yükleniyor...');
+        
+        const response = await fetch('/api/duplicates');
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.message || 'Duplicate matrisler yüklenemedi');
+        }
+        
+        displayDuplicateMatrices(data);
+        
+    } catch (error) {
+        console.error('Error loading duplicate matrices:', error);
+        showAlert('Duplicate matrisler yüklenirken hata oluştu: ' + error.message, 'danger');
+    } finally {
+        hideLoading();
+    }
+}
+
+// Display duplicate matrices
+function displayDuplicateMatrices(duplicateGroups) {
+    const container = document.getElementById('duplicatesContainer');
+    
+    if (!duplicateGroups || duplicateGroups.length === 0) {
+        container.innerHTML = `
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle me-2"></i>
+                Henüz duplicate matris bulunamadı.
+            </div>
+        `;
+        return;
+    }
+    
+    let html = `
+        <div class="row mb-3">
+            <div class="col-12">
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    <strong>${duplicateGroups.length}</strong> farklı matris için toplam 
+                    <strong>${duplicateGroups.reduce((sum, group) => sum + group.count, 0)}</strong> 
+                    duplicate kayıt bulundu.
+                </div>
+            </div>
+        </div>
+    `;
+    
+    duplicateGroups.forEach((group, index) => {
+        html += `
+            <div class="card mb-3">
+                <div class="card-header">
+                    <div class="row align-items-center">
+                        <div class="col">
+                            <h6 class="mb-0">
+                                <i class="fas fa-copy me-2"></i>
+                                Duplicate Grup #${index + 1} - Orijinal Matris ID: ${group.original_id}
+                            </h6>
+                        </div>
+                        <div class="col-auto">
+                            <span class="badge bg-warning">${group.count} duplicate</span>
+                            <button class="btn btn-sm btn-outline-primary ms-2" onclick="viewMatrix(${group.original_id})">
+                                <i class="fas fa-eye me-1"></i>Orijinal Matrisi Görüntüle
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Başlık</th>
+                                    <th>Grup</th>
+                                    <th>Hash</th>
+                                    <th>Oluşturulma</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${group.duplicates.map((dup, dupIndex) => `
+                                <tr>
+                                    <td>${dupIndex + 1}</td>
+                                    <td><code>${dup.duplicate_title}</code></td>
+                                    <td>
+                                        <span class="badge bg-secondary">
+                                            ${dup.duplicate_group || 'Belirtilmemiş'}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <code style="font-size: 0.8em;">${dup.matrix_hash.substring(0, 8)}...</code>
+                                    </td>
+                                    <td>
+                                        <small class="text-muted">${formatDate(dup.created_at)}</small>
+                                    </td>
+                                </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    
+    container.innerHTML = html;
 } 

@@ -97,6 +97,7 @@ func getMatricesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	titleFilter := r.URL.Query().Get("title")
+	groupFilter := r.URL.Query().Get("group")
 
 	// Parse range filters
 	var hamXorMin, hamXorMax, boyarXorMin, boyarXorMax, paarXorMin, paarXorMax, slpXorMin, slpXorMax *int
@@ -149,9 +150,9 @@ func getMatricesHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	log.Printf("📊 [API] GetMatrices request: page=%d, limit=%d, title_filter='%s'", page, limit, titleFilter)
+	log.Printf("📊 [API] GetMatrices request: page=%d, limit=%d, title_filter='%s', group_filter='%s'", page, limit, titleFilter, groupFilter)
 
-	matrices, total, err := db.GetMatrices(page, limit, titleFilter, hamXorMin, hamXorMax, boyarXorMin, boyarXorMax, paarXorMin, paarXorMax, slpXorMin, slpXorMax)
+	matrices, total, err := db.GetMatrices(page, limit, titleFilter, groupFilter, hamXorMin, hamXorMax, boyarXorMin, boyarXorMax, paarXorMin, paarXorMax, slpXorMin, slpXorMax)
 	if err != nil {
 		log.Printf("❌ [API] GetMatrices error: %v", err)
 		http.Error(w, "Matrisler alınamadı: "+err.Error(), http.StatusInternalServerError)
@@ -172,6 +173,24 @@ func getMatricesHandler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("✅ [API] GetMatrices completed in %v: returned %d matrices (total: %d)", duration, len(matrices), total)
 
 	json.NewEncoder(w).Encode(response)
+}
+
+// getGroupsHandler retrieves all unique group names
+func getGroupsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	
+	// Add cache headers for better performance
+	w.Header().Set("Cache-Control", "public, max-age=300") // 5 minute cache for groups
+	
+	groups, err := db.GetGroups()
+	if err != nil {
+		log.Printf("❌ [API] GetGroups error: %v", err)
+		http.Error(w, "Gruplar alınamadı: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("✅ [API] GetGroups completed: returned %d groups", len(groups))
+	json.NewEncoder(w).Encode(groups)
 }
 
 // getMatrixHandler retrieves a single matrix by ID
@@ -484,4 +503,73 @@ func calculateInverseHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(inverseRecord)
+}
+
+// getMatrixByIdHandler retrieves a specific matrix by ID
+func getMatrixByIdHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	vars := mux.Vars(r)
+	idStr := vars["id"]
+
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "Geçersiz ID formatı", http.StatusBadRequest)
+		return
+	}
+
+	matrix, err := db.GetMatrixByID(id)
+	if err != nil {
+		http.Error(w, "Matris bulunamadı: "+err.Error(), http.StatusNotFound)
+		return
+	}
+
+	// Get duplicate matrices
+	duplicates, err := db.GetDuplicateMatrices(id)
+	if err != nil {
+		log.Printf("Duplicate matrisler alınamadı: %v", err)
+		duplicates = []*DuplicateMatrixRecord{} // Empty slice if error
+	}
+
+	// Create response with duplicates
+	response := struct {
+		*MatrixRecord
+		Duplicates []*DuplicateMatrixRecord `json:"duplicates"`
+	}{
+		MatrixRecord: matrix,
+		Duplicates:   duplicates,
+	}
+
+	json.NewEncoder(w).Encode(response)
+}
+
+// getDuplicateMatricesHandler returns all duplicate matrices
+func getDuplicateMatricesHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	duplicatesMap, err := db.GetAllDuplicateMatrices()
+	if err != nil {
+		http.Error(w, "Duplicate matrisler alınamadı: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Convert map to a more structured response
+	type DuplicateGroup struct {
+		OriginalID  int                      `json:"original_id"`
+		Duplicates  []*DuplicateMatrixRecord `json:"duplicates"`
+		Count       int                      `json:"count"`
+	}
+
+	var response []DuplicateGroup
+	for originalID, duplicates := range duplicatesMap {
+		if len(duplicates) > 0 { // Only include if there are duplicates
+			response = append(response, DuplicateGroup{
+				OriginalID: originalID,
+				Duplicates: duplicates,
+				Count:      len(duplicates),
+			})
+		}
+	}
+
+	json.NewEncoder(w).Encode(response)
 } 

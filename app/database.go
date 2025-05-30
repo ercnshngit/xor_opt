@@ -40,6 +40,16 @@ type MatrixRecord struct {
 	UpdatedAt           time.Time `json:"updated_at"`
 }
 
+// DuplicateMatrixRecord represents a duplicate matrix record
+type DuplicateMatrixRecord struct {
+	ID              int       `json:"id"`
+	OriginalID      int       `json:"original_id"`
+	DuplicateTitle  string    `json:"duplicate_title"`
+	DuplicateGroup  string    `json:"duplicate_group"`
+	MatrixHash      string    `json:"matrix_hash"`
+	CreatedAt       time.Time `json:"created_at"`
+}
+
 // Database represents the PostgreSQL database
 type Database struct {
 	db *sql.DB
@@ -131,6 +141,13 @@ func (d *Database) SaveMatrix(title string, matrix Matrix, group string) (*Matri
 	// Check if matrix already exists
 	existing, err := d.GetMatrixByHash(matrixHash)
 	if err == nil && existing != nil {
+		// Matrix already exists, save duplicate info
+		err = d.SaveDuplicateMatrix(existing.ID, title, group, matrixHash)
+		if err != nil {
+			log.Printf("❌ Duplicate matris kaydedilemedi: %v", err)
+		} else {
+			log.Printf("📝 Duplicate matris kaydedildi: %s -> %s (Grup: %s)", title, existing.Title, group)
+		}
 		return existing, nil
 	}
 
@@ -250,7 +267,7 @@ func (d *Database) GetMatrixByHash(hash string) (*MatrixRecord, error) {
 }
 
 // GetMatrices retrieves matrices with pagination and filtering
-func (d *Database) GetMatrices(page, limit int, titleFilter string, hamXorMin, hamXorMax, boyarXorMin, boyarXorMax, paarXorMin, paarXorMax, slpXorMin, slpXorMax *int) ([]*MatrixRecord, int, error) {
+func (d *Database) GetMatrices(page, limit int, titleFilter, groupFilter string, hamXorMin, hamXorMax, boyarXorMin, boyarXorMax, paarXorMin, paarXorMax, slpXorMin, slpXorMax *int) ([]*MatrixRecord, int, error) {
 	// Build WHERE clause
 	var conditions []string
 	var args []interface{}
@@ -259,6 +276,12 @@ func (d *Database) GetMatrices(page, limit int, titleFilter string, hamXorMin, h
 	if titleFilter != "" {
 		conditions = append(conditions, fmt.Sprintf("LOWER(title) LIKE LOWER($%d)", argIndex))
 		args = append(args, "%"+titleFilter+"%")
+		argIndex++
+	}
+
+	if groupFilter != "" {
+		conditions = append(conditions, fmt.Sprintf("LOWER(group_name) LIKE LOWER($%d)", argIndex))
+		args = append(args, "%"+groupFilter+"%")
 		argIndex++
 	}
 
@@ -584,6 +607,7 @@ func (d *Database) importMatricesFromFile(filePath string) (int, error) {
 	importedCount := 0
 	lineNumber := 0
 	matrixCount := 0
+	skipNextSeparator := false
 
 	parseStartTime := time.Now()
 	for scanner.Scan() {
@@ -595,8 +619,20 @@ func (d *Database) importMatricesFromFile(filePath string) (int, error) {
 			continue
 		}
 
+		// Skip HamXOR Sayisi lines and mark to skip next separator
+		if strings.Contains(line, "HamXOR Sayisi:") {
+			skipNextSeparator = true
+			continue
+		}
+
 		// Check for separator
 		if strings.HasPrefix(line, "------------------------------") {
+			// If we should skip this separator (it's after HamXOR), skip it
+			if skipNextSeparator {
+				skipNextSeparator = false
+				continue
+			}
+			
 			// Process current matrix if we have one
 			if len(currentMatrix) > 0 && currentTitle != "" {
 				matrixStartTime := time.Now()
@@ -635,7 +671,7 @@ func (d *Database) importMatricesFromFile(filePath string) (int, error) {
 			continue
 		}
 
-		// Skip other lines (like "HamXOR Sayisi:" etc.)
+		// Skip other lines
 	}
 
 	// Process the last matrix if exists
@@ -679,7 +715,13 @@ func (d *Database) saveMatrixFromImport(title string, matrix [][]string, group s
 	log.Printf("⏱️  [IMPORT] Hash kontrolü tamamlandı (%v): %s", hashDuration, title)
 	
 	if err == nil && existing != nil {
-		// Matrix already exists, skip
+		// Matrix already exists, save duplicate info
+		err = d.SaveDuplicateMatrix(existing.ID, title, group, matrixHash)
+		if err != nil {
+			log.Printf("❌ [IMPORT] Duplicate matris kaydedilemedi: %v", err)
+		} else {
+			log.Printf("📝 [IMPORT] Duplicate matris kaydedildi: %s -> %s (Grup: %s)", title, existing.Title, group)
+		}
 		log.Printf("⏭️  [IMPORT] Matris zaten mevcut, atlanıyor: %s", title)
 		return nil
 	}
@@ -1102,6 +1144,17 @@ func createTables(database *sql.DB) error {
 		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);
 
+	-- Create duplicate_matrices table
+	CREATE TABLE IF NOT EXISTS duplicate_matrices (
+		id SERIAL PRIMARY KEY,
+		original_id INTEGER NOT NULL REFERENCES matrix_records(id) ON DELETE CASCADE,
+		duplicate_title VARCHAR(255) NOT NULL,
+		duplicate_group VARCHAR(255),
+		matrix_hash VARCHAR(32) NOT NULL,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE(original_id, duplicate_title, duplicate_group)
+	);
+
 	-- Create indexes for better performance
 	CREATE INDEX IF NOT EXISTS idx_matrix_records_hash ON matrix_records(matrix_hash);
 	CREATE INDEX IF NOT EXISTS idx_matrix_records_title ON matrix_records(title);
@@ -1114,6 +1167,12 @@ func createTables(database *sql.DB) error {
 	CREATE INDEX IF NOT EXISTS idx_matrix_records_inverse_id ON matrix_records(inverse_matrix_id);
 	CREATE INDEX IF NOT EXISTS idx_matrix_records_inverse_hash ON matrix_records(inverse_matrix_hash);
 	CREATE INDEX IF NOT EXISTS idx_matrix_records_created_at ON matrix_records(created_at);
+	
+	-- Create indexes for duplicate_matrices table
+	CREATE INDEX IF NOT EXISTS idx_duplicate_matrices_original_id ON duplicate_matrices(original_id);
+	CREATE INDEX IF NOT EXISTS idx_duplicate_matrices_hash ON duplicate_matrices(matrix_hash);
+	CREATE INDEX IF NOT EXISTS idx_duplicate_matrices_group ON duplicate_matrices(duplicate_group);
+	CREATE INDEX IF NOT EXISTS idx_duplicate_matrices_created_at ON duplicate_matrices(created_at);
 	`
 
 	_, err = database.Exec(createTableSQL)
@@ -1469,6 +1528,13 @@ func (d *Database) SaveMatrixInverse(originalID int) (*MatrixRecord, error) {
 	inverseHash := calculateMatrixHash(inverse)
 	existing, err := d.GetMatrixByHash(inverseHash)
 	if err == nil && existing != nil {
+		// Matrix already exists, save duplicate info
+		err = d.SaveDuplicateMatrix(existing.ID, inverseTitle, original.Group, inverseHash)
+		if err != nil {
+			log.Printf("❌ [INVERSE] Duplicate ters matris kaydedilemedi: %v", err)
+		} else {
+			log.Printf("📝 [INVERSE] Duplicate ters matris kaydedildi: %s -> %s (Grup: %s)", inverseTitle, existing.Title, original.Group)
+		}
 		// Update original matrix with inverse reference
 		err = d.updateMatrixInverseReference(originalID, existing.ID, inverseHash)
 		if err != nil {
@@ -1558,4 +1624,132 @@ func parseMatrixFromBinary(matrixBinary string) (Matrix, error) {
 	}
 	
 	return matrix, nil
+}
+
+// GetGroups returns all unique group names from the database
+func (d *Database) GetGroups() ([]string, error) {
+	query := `
+	SELECT DISTINCT group_name 
+	FROM matrix_records 
+	WHERE group_name IS NOT NULL AND group_name != ''
+	ORDER BY group_name
+	`
+	
+	rows, err := d.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var groups []string
+	for rows.Next() {
+		var group string
+		if err := rows.Scan(&group); err != nil {
+			return nil, err
+		}
+		groups = append(groups, group)
+	}
+
+	return groups, nil
+}
+
+// SaveDuplicateMatrix saves a duplicate matrix record
+func (d *Database) SaveDuplicateMatrix(originalID int, duplicateTitle, duplicateGroup, matrixHash string) error {
+	// Check if this duplicate already exists
+	var count int
+	checkQuery := `
+	SELECT COUNT(*) FROM duplicate_matrices 
+	WHERE original_id = $1 AND duplicate_title = $2 AND duplicate_group = $3
+	`
+	err := d.db.QueryRow(checkQuery, originalID, duplicateTitle, duplicateGroup).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("duplicate kontrol hatası: %v", err)
+	}
+	
+	if count > 0 {
+		// Already exists, skip
+		return nil
+	}
+
+	query := `
+	INSERT INTO duplicate_matrices (original_id, duplicate_title, duplicate_group, matrix_hash)
+	VALUES ($1, $2, $3, $4)
+	`
+	
+	_, err = d.db.Exec(query, originalID, duplicateTitle, duplicateGroup, matrixHash)
+	if err != nil {
+		return fmt.Errorf("duplicate matris kaydedilemedi: %v", err)
+	}
+	
+	return nil
+}
+
+// GetDuplicateMatrices returns all duplicate matrices for a given original matrix ID
+func (d *Database) GetDuplicateMatrices(originalID int) ([]*DuplicateMatrixRecord, error) {
+	query := `
+	SELECT id, original_id, duplicate_title, duplicate_group, matrix_hash, created_at
+	FROM duplicate_matrices 
+	WHERE original_id = $1
+	ORDER BY created_at ASC
+	`
+	
+	rows, err := d.db.Query(query, originalID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var duplicates []*DuplicateMatrixRecord
+	for rows.Next() {
+		var duplicate DuplicateMatrixRecord
+		err := rows.Scan(
+			&duplicate.ID,
+			&duplicate.OriginalID,
+			&duplicate.DuplicateTitle,
+			&duplicate.DuplicateGroup,
+			&duplicate.MatrixHash,
+			&duplicate.CreatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		duplicates = append(duplicates, &duplicate)
+	}
+
+	return duplicates, nil
+}
+
+// GetAllDuplicateMatrices returns all duplicate matrices grouped by original matrix
+func (d *Database) GetAllDuplicateMatrices() (map[int][]*DuplicateMatrixRecord, error) {
+	query := `
+	SELECT id, original_id, duplicate_title, duplicate_group, matrix_hash, created_at
+	FROM duplicate_matrices 
+	ORDER BY original_id, created_at ASC
+	`
+	
+	rows, err := d.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	duplicatesMap := make(map[int][]*DuplicateMatrixRecord)
+	for rows.Next() {
+		var duplicate DuplicateMatrixRecord
+		err := rows.Scan(
+			&duplicate.ID,
+			&duplicate.OriginalID,
+			&duplicate.DuplicateTitle,
+			&duplicate.DuplicateGroup,
+			&duplicate.MatrixHash,
+			&duplicate.CreatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		
+		duplicatesMap[duplicate.OriginalID] = append(duplicatesMap[duplicate.OriginalID], &duplicate)
+	}
+
+	return duplicatesMap, nil
 } 

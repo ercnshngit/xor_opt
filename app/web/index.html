@@ -42,6 +42,29 @@
         .btn-primary:hover {
             background: #667eea;
         }
+        
+        /* Modal scroll yönetimi için iyileştirmeler */
+        body {
+            /* Scroll bar genişliğini hesapla ve layout shift'i önle */
+            scrollbar-gutter: stable;
+        }
+        
+        /* Modal açıkken body'nin scroll pozisyonunu koru */
+        body.modal-open {
+            overflow: hidden !important;
+            /* Scroll bar kaybolduğunda layout shift'i önle */
+            padding-right: 0 !important;
+        }
+        
+        /* Modal backdrop'ın z-index'ini ayarla */
+        .modal-backdrop {
+            z-index: 1040;
+        }
+        
+        /* Modal'ın z-index'ini ayarla */
+        .modal {
+            z-index: 1050;
+        }
     </style>
 </head>
 <body>
@@ -58,6 +81,11 @@
                             <li class="nav-item" role="presentation">
                                 <button class="nav-link active" id="matrices-tab" data-bs-toggle="tab" data-bs-target="#matrices" type="button" role="tab">
                                     <i class="fas fa-table me-2"></i>Matrisler
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="duplicates-tab" data-bs-toggle="tab" data-bs-target="#duplicates" type="button" role="tab">
+                                    <i class="fas fa-copy me-2"></i>Duplicate Matrisler
                                 </button>
                             </li>
                             <li class="nav-item" role="presentation">
@@ -104,6 +132,12 @@
                                         <div class="card-body">
                                             <div class="row">
                                                 <div class="col-md-3">
+                                                    <label class="form-label">Grup</label>
+                                                    <select class="form-select form-select-sm" id="groupFilter">
+                                                        <option value="">Tüm Gruplar</option>
+                                                    </select>
+                                                </div>
+                                                <div class="col-md-3">
                                                     <label class="form-label">Ham XOR Sayısı</label>
                                                     <div class="row">
                                                         <div class="col-6">
@@ -136,6 +170,8 @@
                                                         </div>
                                                     </div>
                                                 </div>
+                                            </div>
+                                            <div class="row mt-2">
                                                 <div class="col-md-3">
                                                     <label class="form-label">SLP XOR Sayısı</label>
                                                     <div class="row">
@@ -184,6 +220,25 @@
 
                                 <div id="matricesContainer">
                                     <!-- Matrices will be loaded here -->
+                                </div>
+                            </div>
+
+                            <!-- Duplicate Matrices Tab -->
+                            <div class="tab-pane fade" id="duplicates" role="tabpanel">
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <h5><i class="fas fa-copy me-2"></i>Duplicate Matrisler</h5>
+                                        <p class="text-muted">Aynı hash değerine sahip matrisler ve bunların farklı grup/başlık bilgileri</p>
+                                    </div>
+                                    <div class="col-md-6 text-end">
+                                        <button class="btn btn-outline-primary" onclick="loadDuplicateMatrices()">
+                                            <i class="fas fa-refresh me-2"></i>Yenile
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div id="duplicatesContainer">
+                                    <!-- Duplicate matrices will be loaded here -->
                                 </div>
                             </div>
 
