@@ -250,7 +250,7 @@ func (d *Database) GetMatrixByHash(hash string) (*MatrixRecord, error) {
 }
 
 // GetMatrices retrieves matrices with pagination and filtering
-func (d *Database) GetMatrices(page, limit int, titleFilter string, hamXorMin, hamXorMax, boyarXorMin, boyarXorMax, paarXorMin, paarXorMax, slpXorMin, slpXorMax *int) ([]*MatrixRecord, int, error) {
+func (d *Database) GetMatrices(page, limit int, titleFilter, groupFilter string, hamXorMin, hamXorMax, boyarXorMin, boyarXorMax, paarXorMin, paarXorMax, slpXorMin, slpXorMax *int) ([]*MatrixRecord, int, error) {
 	// Build WHERE clause
 	var conditions []string
 	var args []interface{}
@@ -259,6 +259,12 @@ func (d *Database) GetMatrices(page, limit int, titleFilter string, hamXorMin, h
 	if titleFilter != "" {
 		conditions = append(conditions, fmt.Sprintf("LOWER(title) LIKE LOWER($%d)", argIndex))
 		args = append(args, "%"+titleFilter+"%")
+		argIndex++
+	}
+
+	if groupFilter != "" {
+		conditions = append(conditions, fmt.Sprintf("LOWER(group_name) LIKE LOWER($%d)", argIndex))
+		args = append(args, "%"+groupFilter+"%")
 		argIndex++
 	}
 
@@ -1558,4 +1564,51 @@ func parseMatrixFromBinary(matrixBinary string) (Matrix, error) {
 	}
 	
 	return matrix, nil
+}
+
+// GetMatricesForBulkInverse returns matrices that are candidates for bulk inverse calculation
+func (d *Database) GetMatricesForBulkInverse(maxSmallestXor int, skipExisting bool) ([]*MatrixRecord, error) {
+	// Build WHERE clause
+	var conditions []string
+	var args []interface{}
+	argIndex := 1
+	
+	// Filter by smallest XOR
+	conditions = append(conditions, fmt.Sprintf("smallest_xor IS NOT NULL AND smallest_xor < $%d", argIndex))
+	args = append(args, maxSmallestXor)
+	argIndex++
+	
+	// Skip matrices that already have inverse if requested
+	if skipExisting {
+		conditions = append(conditions, "inverse_matrix_id IS NULL")
+	}
+	
+	whereClause := "WHERE " + strings.Join(conditions, " AND ")
+	
+	// Query to get matrices
+	query := fmt.Sprintf(`
+	SELECT id, title, group_name, matrix_binary, matrix_hex, ham_xor_count, smallest_xor,
+	       boyar_xor_count, boyar_depth, boyar_program,
+	       paar_xor_count, paar_program, slp_xor_count, slp_program,
+	       matrix_hash, inverse_matrix_id, inverse_matrix_hash, created_at, updated_at
+	FROM matrix_records %s
+	ORDER BY smallest_xor ASC, created_at ASC
+	`, whereClause)
+	
+	rows, err := d.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var matrices []*MatrixRecord
+	for rows.Next() {
+		matrix, err := d.scanMatrixRecord(rows)
+		if err != nil {
+			return nil, err
+		}
+		matrices = append(matrices, matrix)
+	}
+
+	return matrices, nil
 } 

@@ -47,6 +47,33 @@ type BulkRecalculateResponse struct {
 	Message        string `json:"message"`
 }
 
+// BulkInverseRequest represents the request for bulk inverse calculation
+type BulkInverseRequest struct {
+	MaxSmallestXor     int  `json:"max_smallest_xor"`
+	SkipExisting       bool `json:"skip_existing"`
+	CalculateAlgorithms bool `json:"calculate_algorithms"`
+	BatchSize          int  `json:"batch_size"`
+}
+
+// BulkInverseResponse represents the response for bulk inverse calculation
+type BulkInverseResponse struct {
+	ProcessedCount int                    `json:"processed_count"`
+	SuccessCount   int                    `json:"success_count"`
+	ErrorCount     int                    `json:"error_count"`
+	Results        []BulkInverseResult    `json:"results"`
+	Message        string                 `json:"message"`
+}
+
+// BulkInverseResult represents a single result in bulk inverse calculation
+type BulkInverseResult struct {
+	OriginalID    int    `json:"original_id"`
+	OriginalTitle string `json:"original_title"`
+	InverseID     *int   `json:"inverse_id,omitempty"`
+	InverseTitle  string `json:"inverse_title,omitempty"`
+	Status        string `json:"status"` // "success", "error", "skipped"
+	Message       string `json:"message"`
+}
+
 // saveMatrixHandler saves a matrix to the database
 func saveMatrixHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -97,6 +124,7 @@ func getMatricesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	titleFilter := r.URL.Query().Get("title")
+	groupFilter := r.URL.Query().Get("group")
 
 	// Parse range filters
 	var hamXorMin, hamXorMax, boyarXorMin, boyarXorMax, paarXorMin, paarXorMax, slpXorMin, slpXorMax *int
@@ -149,9 +177,9 @@ func getMatricesHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	log.Printf("📊 [API] GetMatrices request: page=%d, limit=%d, title_filter='%s'", page, limit, titleFilter)
+	log.Printf("📊 [API] GetMatrices request: page=%d, limit=%d, title_filter='%s', group_filter='%s'", page, limit, titleFilter, groupFilter)
 
-	matrices, total, err := db.GetMatrices(page, limit, titleFilter, hamXorMin, hamXorMax, boyarXorMin, boyarXorMax, paarXorMin, paarXorMax, slpXorMin, slpXorMax)
+	matrices, total, err := db.GetMatrices(page, limit, titleFilter, groupFilter, hamXorMin, hamXorMax, boyarXorMin, boyarXorMax, paarXorMin, paarXorMax, slpXorMin, slpXorMax)
 	if err != nil {
 		log.Printf("❌ [API] GetMatrices error: %v", err)
 		http.Error(w, "Matrisler alınamadı: "+err.Error(), http.StatusInternalServerError)
@@ -484,4 +512,162 @@ func calculateInverseHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(inverseRecord)
+}
+
+// bulkInverseHandler handles bulk inverse matrix calculation
+func bulkInverseHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var req BulkInverseRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Geçersiz JSON formatı", http.StatusBadRequest)
+		return
+	}
+
+	if req.MaxSmallestXor <= 0 {
+		http.Error(w, "Geçersiz smallest XOR değeri", http.StatusBadRequest)
+		return
+	}
+
+	// Default batch size
+	if req.BatchSize <= 0 {
+		req.BatchSize = 10
+	}
+
+	log.Printf("🔄 [BULK-INVERSE] Toplu ters alma başlatıldı - Max XOR: %d, Batch: %d, Skip existing: %v", 
+		req.MaxSmallestXor, req.BatchSize, req.SkipExisting)
+
+	// Get matrices with smallest XOR less than the specified value
+	matrices, err := db.GetMatricesForBulkInverse(req.MaxSmallestXor, req.SkipExisting)
+	if err != nil {
+		http.Error(w, "Matrisler alınamadı: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if len(matrices) == 0 {
+		response := BulkInverseResponse{
+			ProcessedCount: 0,
+			SuccessCount:   0,
+			ErrorCount:     0,
+			Results:        []BulkInverseResult{},
+			Message:        "Belirtilen kriterlere uygun matris bulunamadı",
+		}
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	log.Printf("📊 [BULK-INVERSE] %d matris bulundu, işlem başlıyor", len(matrices))
+
+	// Process matrices in background
+	go func() {
+		results := make([]BulkInverseResult, 0, len(matrices))
+		successCount := 0
+		errorCount := 0
+
+		for i, matrix := range matrices {
+			log.Printf("🔄 [BULK-INVERSE] Matris %d/%d işleniyor (ID: %d): %s", 
+				i+1, len(matrices), matrix.ID, matrix.Title)
+
+			result := BulkInverseResult{
+				OriginalID:    matrix.ID,
+				OriginalTitle: matrix.Title,
+			}
+
+			// Check if inverse already exists (double check)
+			if req.SkipExisting && matrix.InverseMatrixID != nil {
+				result.Status = "skipped"
+				result.Message = "Ters matris zaten mevcut"
+				results = append(results, result)
+				continue
+			}
+
+			// Calculate inverse matrix
+			inverseRecord, err := db.SaveMatrixInverse(matrix.ID)
+			if err != nil {
+				log.Printf("❌ [BULK-INVERSE] Matris %d için ters hesaplanamadı: %v", matrix.ID, err)
+				result.Status = "error"
+				result.Message = err.Error()
+				errorCount++
+			} else {
+				log.Printf("✅ [BULK-INVERSE] Matris %d için ters hesaplandı (ID: %d)", matrix.ID, inverseRecord.ID)
+				result.Status = "success"
+				result.InverseID = &inverseRecord.ID
+				result.InverseTitle = inverseRecord.Title
+				result.Message = "Ters matris başarıyla hesaplandı"
+				successCount++
+
+				// Calculate algorithms if requested
+				if req.CalculateAlgorithms {
+					log.Printf("🧮 [BULK-INVERSE] Matris %d için algoritma hesaplamaları başlatılıyor", inverseRecord.ID)
+					
+					// Parse inverse matrix
+					inverseMatrix, parseErr := parseMatrixFromBinary(inverseRecord.MatrixBinary)
+					if parseErr != nil {
+						log.Printf("❌ [BULK-INVERSE] Ters matris parse edilemedi (ID %d): %v", inverseRecord.ID, parseErr)
+					} else {
+						// Run algorithms in background
+						go func(matrixID int, matrix Matrix, title string) {
+							var boyarResult, paarResult, slpResult *AlgResult
+
+							// Boyar SLP
+							if boyar := NewBoyarSLP(10); boyar != nil {
+								if result, err := boyar.Solve(matrix); err == nil {
+									boyarResult = &result
+									log.Printf("✅ [BULK-INVERSE-BOYAR] %s tamamlandı - XOR: %d", title, result.XorCount)
+								} else {
+									log.Printf("❌ [BULK-INVERSE-BOYAR] %s hatası: %v", title, err)
+								}
+							}
+
+							// Paar Algorithm
+							if paar := NewPaarAlgorithm(); paar != nil {
+								if result, err := paar.Solve(matrix); err == nil {
+									paarResult = &result
+									log.Printf("✅ [BULK-INVERSE-PAAR] %s tamamlandı - XOR: %d", title, result.XorCount)
+								} else {
+									log.Printf("❌ [BULK-INVERSE-PAAR] %s hatası: %v", title, err)
+								}
+							}
+
+							// SLP Heuristic
+							if slp := NewSLPHeuristic(); slp != nil {
+								if result, err := slp.Solve(matrix); err == nil {
+									slpResult = &result
+									log.Printf("✅ [BULK-INVERSE-SLP] %s tamamlandı - XOR: %d", title, result.XorCount)
+								} else {
+									log.Printf("❌ [BULK-INVERSE-SLP] %s hatası: %v", title, err)
+								}
+							}
+
+							// Update database
+							if updateErr := db.UpdateMatrixResults(matrixID, boyarResult, paarResult, slpResult); updateErr != nil {
+								log.Printf("❌ [BULK-INVERSE-UPDATE] %s sonuçları güncellenemedi: %v", title, updateErr)
+							} else {
+								log.Printf("✅ [BULK-INVERSE-UPDATE] %s sonuçları güncellendi", title)
+							}
+						}(inverseRecord.ID, inverseMatrix, inverseRecord.Title)
+					}
+				}
+			}
+
+			results = append(results, result)
+
+			// Small delay between operations
+			time.Sleep(100 * time.Millisecond)
+		}
+
+		log.Printf("🎉 [BULK-INVERSE] Toplu ters alma tamamlandı - Başarılı: %d, Hatalı: %d", 
+			successCount, errorCount)
+	}()
+
+	// Return immediate response
+	response := BulkInverseResponse{
+		ProcessedCount: 0,
+		SuccessCount:   0,
+		ErrorCount:     0,
+		Results:        []BulkInverseResult{},
+		Message:        fmt.Sprintf("%d matris için ters alma işlemi başlatıldı", len(matrices)),
+	}
+
+	json.NewEncoder(w).Encode(response)
 } 

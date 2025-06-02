@@ -70,16 +70,27 @@
                                     <i class="fas fa-upload me-2"></i>Toplu Yükleme
                                 </button>
                             </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="bulk-inverse-tab" data-bs-toggle="tab" data-bs-target="#bulk-inverse" type="button" role="tab">
+                                    <i class="fas fa-exchange-alt me-2"></i>Toplu Ters Alma
+                                </button>
+                            </li>
                         </ul>
 
                         <div class="tab-content" id="mainTabContent">
                             <!-- Matrices List Tab -->
                             <div class="tab-pane fade show active" id="matrices" role="tabpanel">
                                 <div class="row mb-3">
-                                    <div class="col-md-6">
+                                    <div class="col-md-3">
                                         <div class="input-group">
                                             <span class="input-group-text"><i class="fas fa-search"></i></span>
                                             <input type="text" class="form-control" id="searchInput" placeholder="Başlık ile ara...">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="input-group">
+                                            <span class="input-group-text"><i class="fas fa-layer-group"></i></span>
+                                            <input type="text" class="form-control" id="groupSearchInput" placeholder="Grup ile ara...">
                                         </div>
                                     </div>
                                     <div class="col-md-6 text-end">
@@ -400,6 +411,191 @@ HamXOR Sayisi:
                                                         <li><strong>.dat:</strong> Veri dosyası formatı</li>
                                                         <li><strong>.csv:</strong> Virgülle ayrılmış değerler</li>
                                                     </ul>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Bulk Inverse Tab -->
+                            <div class="tab-pane fade" id="bulk-inverse" role="tabpanel">
+                                <div class="row">
+                                    <div class="col-md-8">
+                                        <div class="card">
+                                            <div class="card-header">
+                                                <h5 class="mb-0"><i class="fas fa-exchange-alt me-2"></i>Toplu Ters Matris Hesaplama</h5>
+                                            </div>
+                                            <div class="card-body">
+                                                <div class="alert alert-info">
+                                                    <i class="fas fa-info-circle me-2"></i>
+                                                    Bu araç belirtilen smallest XOR değerinden küçük olan tüm matrislerin ters matrislerini hesaplar.
+                                                    Ters matrisler veritabanında yoksa otomatik olarak oluşturulur ve algoritmaları hesaplanır.
+                                                </div>
+
+                                                <form id="bulkInverseForm">
+                                                    <div class="row mb-4">
+                                                        <div class="col-md-6">
+                                                            <label for="maxSmallestXor" class="form-label">
+                                                                <i class="fas fa-less-than me-1"></i>Maksimum Smallest XOR Değeri
+                                                            </label>
+                                                            <input type="number" class="form-control" id="maxSmallestXor" min="1" max="1000" value="50" required>
+                                                            <div class="form-text">
+                                                                Bu değerden küçük smallest XOR'a sahip matrislerin tersi alınacak
+                                                            </div>
+                                                        </div>
+                                                        <div class="col-md-6">
+                                                            <label for="batchSize" class="form-label">
+                                                                <i class="fas fa-layer-group me-1"></i>Batch Boyutu
+                                                            </label>
+                                                            <input type="number" class="form-control" id="batchSize" min="1" max="100" value="10">
+                                                            <div class="form-text">
+                                                                Aynı anda işlenecek matris sayısı
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    <div class="mb-3">
+                                                        <div class="form-check">
+                                                            <input class="form-check-input" type="checkbox" id="skipExisting" checked>
+                                                            <label class="form-check-label" for="skipExisting">
+                                                                Zaten ters matrisi olan matrisleri atla
+                                                            </label>
+                                                        </div>
+                                                    </div>
+
+                                                    <div class="mb-3">
+                                                        <div class="form-check">
+                                                            <input class="form-check-input" type="checkbox" id="calculateAlgorithms" checked>
+                                                            <label class="form-check-label" for="calculateAlgorithms">
+                                                                Ters matrisler için algoritmaları hesapla (Boyar, Paar, SLP)
+                                                            </label>
+                                                        </div>
+                                                    </div>
+
+                                                    <div class="d-flex gap-2">
+                                                        <button type="button" class="btn btn-outline-info" onclick="previewBulkInverse()">
+                                                            <i class="fas fa-eye me-2"></i>Önizleme
+                                                        </button>
+                                                        <button type="submit" class="btn btn-primary">
+                                                            <i class="fas fa-play me-2"></i>Toplu Ters Alma Başlat
+                                                        </button>
+                                                    </div>
+                                                </form>
+
+                                                <!-- Preview Results -->
+                                                <div id="bulkInversePreview" class="mt-4" style="display: none;">
+                                                    <div class="card">
+                                                        <div class="card-header">
+                                                            <h6 class="mb-0"><i class="fas fa-eye me-2"></i>Önizleme Sonuçları</h6>
+                                                        </div>
+                                                        <div class="card-body">
+                                                            <div id="previewContent"></div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Progress -->
+                                                <div id="bulkInverseProgress" class="mt-4" style="display: none;">
+                                                    <div class="card">
+                                                        <div class="card-header">
+                                                            <h6 class="mb-0"><i class="fas fa-cogs me-2"></i>İşlem Durumu</h6>
+                                                        </div>
+                                                        <div class="card-body">
+                                                            <div class="progress mb-3">
+                                                                <div class="progress-bar" id="inverseProgressBar" role="progressbar" style="width: 0%"></div>
+                                                            </div>
+                                                            <div class="row">
+                                                                <div class="col-md-6">
+                                                                    <small class="text-muted">Genel İlerleme:</small>
+                                                                    <div id="inverseProgressText">0 / 0</div>
+                                                                </div>
+                                                                <div class="col-md-6">
+                                                                    <small class="text-muted">Durum:</small>
+                                                                    <div id="inverseStatusText">Hazırlanıyor...</div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Results -->
+                                                <div id="bulkInverseResults" class="mt-4" style="display: none;">
+                                                    <div class="card">
+                                                        <div class="card-header">
+                                                            <h6 class="mb-0"><i class="fas fa-check-circle me-2"></i>İşlem Sonuçları</h6>
+                                                        </div>
+                                                        <div class="card-body">
+                                                            <div id="resultsContent"></div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="card">
+                                            <div class="card-header">
+                                                <h5 class="mb-0"><i class="fas fa-info-circle me-2"></i>Bilgi</h5>
+                                            </div>
+                                            <div class="card-body">
+                                                <h6>Toplu Ters Alma Nasıl Çalışır?</h6>
+                                                <ol class="small">
+                                                    <li><strong>Filtreleme:</strong> Belirtilen smallest XOR değerinden küçük matrisleri bulur</li>
+                                                    <li><strong>Kontrol:</strong> Ters matrisi zaten var mı kontrol eder</li>
+                                                    <li><strong>Hesaplama:</strong> Ters matris hesaplar ve veritabanına kaydeder</li>
+                                                    <li><strong>Algoritmalar:</strong> Ters matris için Boyar, Paar ve SLP algoritmalarını çalıştırır</li>
+                                                    <li><strong>Güncelleme:</strong> Smallest XOR değerini günceller</li>
+                                                </ol>
+
+                                                <div class="mt-3">
+                                                    <h6>Önemli Notlar:</h6>
+                                                    <ul class="small">
+                                                        <li>Ters matris hesaplama işlemi zaman alabilir</li>
+                                                        <li>Büyük matrisler için daha fazla süre gerekir</li>
+                                                        <li>İşlem arka planda devam eder</li>
+                                                        <li>Ters alınamayan matrisler atlanır</li>
+                                                        <li>Batch boyutu performansı etkiler</li>
+                                                    </ul>
+                                                </div>
+
+                                                <div class="mt-3">
+                                                    <h6>Performans İpuçları:</h6>
+                                                    <ul class="small">
+                                                        <li><strong>Küçük batch:</strong> Daha az bellek kullanımı</li>
+                                                        <li><strong>Büyük batch:</strong> Daha hızlı işlem</li>
+                                                        <li><strong>Önizleme:</strong> İşlem öncesi kontrol edin</li>
+                                                        <li><strong>Mevcut atla:</strong> Gereksiz hesaplamayı önler</li>
+                                                    </ul>
+                                                </div>
+
+                                                <div class="mt-3 p-2 bg-light rounded">
+                                                    <small class="text-muted">
+                                                        <i class="fas fa-lightbulb me-1"></i>
+                                                        <strong>İpucu:</strong> İlk kez kullanıyorsanız küçük bir değerle (örn: 20) başlayın.
+                                                    </small>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div class="card mt-3">
+                                            <div class="card-header">
+                                                <h6 class="mb-0"><i class="fas fa-chart-bar me-2"></i>İstatistikler</h6>
+                                            </div>
+                                            <div class="card-body">
+                                                <div id="bulkInverseStats">
+                                                    <div class="row text-center">
+                                                        <div class="col-6">
+                                                            <div class="border-end">
+                                                                <div class="h5 mb-0" id="totalMatricesCount">-</div>
+                                                                <small class="text-muted">Toplam Matris</small>
+                                                            </div>
+                                                        </div>
+                                                        <div class="col-6">
+                                                            <div class="h5 mb-0" id="withInverseCount">-</div>
+                                                            <small class="text-muted">Ters Matrisi Var</small>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>

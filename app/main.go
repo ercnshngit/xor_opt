@@ -1169,6 +1169,7 @@ func main() {
 	r.HandleFunc("/api/matrices/process", processAndSaveMatrixHandler).Methods("POST")
 	r.HandleFunc("/api/matrices/recalculate", recalculateHandler).Methods("POST")
 	r.HandleFunc("/api/matrices/bulk-recalculate", bulkRecalculateHandler).Methods("POST")
+	r.HandleFunc("/api/matrices/bulk-inverse", bulkInverseHandler).Methods("POST")
 
 	// Config API endpoints
 	r.HandleFunc("/api/config", func(w http.ResponseWriter, r *http.Request) {
@@ -1207,6 +1208,7 @@ func main() {
 	log.Printf("  POST /api/matrices/process - Process and save matrix")
 	log.Printf("  POST /api/matrices/recalculate - Recalculate algorithms")
 	log.Printf("  POST /api/matrices/bulk-recalculate - Bulk recalculate algorithms")
+	log.Printf("  POST /api/matrices/bulk-inverse - Bulk inverse")
 	log.Printf("  GET  /api/config - Get current configuration")
 	log.Printf("  POST /api/config/import - Trigger manual import")
 	log.Printf("=== Backend hazır, istekleri bekleniyor ===")

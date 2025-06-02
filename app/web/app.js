@@ -2,6 +2,7 @@
 let currentPage = 1;
 let currentLimit = 10;
 let currentFilter = '';
+let currentGroupFilter = '';
 let currentMatrixId = null;
 let currentFilters = {
     hamXorMin: null,
@@ -44,6 +45,13 @@ function loadFromURL() {
     if (search) {
         currentFilter = search;
         document.getElementById('searchInput').value = search;
+    }
+    
+    // Load group filter
+    const group = urlParams.get('group');
+    if (group) {
+        currentGroupFilter = group;
+        document.getElementById('groupSearchInput').value = group;
     }
     
     // Load range filters
@@ -104,6 +112,11 @@ function updateURL() {
         params.set('search', currentFilter);
     }
     
+    // Add group filter
+    if (currentGroupFilter) {
+        params.set('group', currentGroupFilter);
+    }
+    
     // Add range filters
     if (currentFilters.hamXorMin !== null) {
         params.set('hamXorMin', currentFilters.hamXorMin);
@@ -143,6 +156,18 @@ function setupEventListeners() {
         clearTimeout(searchTimeout);
         searchTimeout = setTimeout(() => {
             currentFilter = this.value;
+            currentPage = 1; // Reset to first page when searching
+            loadMatrices();
+        }, 500);
+    });
+
+    // Group search input
+    const groupSearchInput = document.getElementById('groupSearchInput');
+    let groupSearchTimeout;
+    groupSearchInput.addEventListener('input', function() {
+        clearTimeout(groupSearchTimeout);
+        groupSearchTimeout = setTimeout(() => {
+            currentGroupFilter = this.value;
             currentPage = 1; // Reset to first page when searching
             loadMatrices();
         }, 500);
@@ -195,6 +220,23 @@ function setupEventListeners() {
             }
         }
     });
+
+    // Bulk Inverse Form
+    const bulkInverseForm = document.getElementById('bulkInverseForm');
+    if (bulkInverseForm) {
+        bulkInverseForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            startBulkInverse();
+        });
+    }
+    
+    // Load stats when tab is shown
+    const bulkInverseTab = document.getElementById('bulk-inverse-tab');
+    if (bulkInverseTab) {
+        bulkInverseTab.addEventListener('shown.bs.tab', function() {
+            loadBulkInverseStats();
+        });
+    }
 }
 
 // Load matrices from API
@@ -210,6 +252,10 @@ async function loadMatrices() {
         
         if (currentFilter) {
             params.append('title', currentFilter);
+        }
+
+        if (currentGroupFilter) {
+            params.append('group', currentGroupFilter);
         }
 
         // Add range filters
@@ -1304,5 +1350,223 @@ async function calculateMatrixInverse() {
         showAlert('Ters matris hesaplama sırasında hata oluştu: ' + error.message, 'danger');
     } finally {
         hideLoading();
+    }
+}
+
+// Bulk Inverse Functions
+async function previewBulkInverse() {
+    const maxSmallestXor = document.getElementById('maxSmallestXor').value;
+    const skipExisting = document.getElementById('skipExisting').checked;
+    
+    if (!maxSmallestXor) {
+        showAlert('Lütfen maksimum smallest XOR değerini girin', 'warning');
+        return;
+    }
+
+    showLoading('Önizleme hazırlanıyor...');
+    
+    try {
+        // Get matrices that match criteria
+        const response = await fetch(`/api/matrices?limit=1000&slp_xor_max=${maxSmallestXor}`);
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.message || 'Matrisler alınamadı');
+        }
+
+        const matrices = data.matrices || [];
+        const candidateMatrices = matrices.filter(matrix => {
+            const smallestXor = matrix.smallest_xor;
+            if (!smallestXor || smallestXor >= parseInt(maxSmallestXor)) {
+                return false;
+            }
+            
+            if (skipExisting && matrix.inverse_matrix_id) {
+                return false;
+            }
+            
+            return true;
+        });
+
+        // Update stats
+        document.getElementById('totalMatricesCount').textContent = matrices.length;
+        document.getElementById('withInverseCount').textContent = 
+            matrices.filter(m => m.inverse_matrix_id).length;
+
+        // Show preview
+        const previewDiv = document.getElementById('bulkInversePreview');
+        const previewContent = document.getElementById('previewContent');
+        
+        if (candidateMatrices.length === 0) {
+            previewContent.innerHTML = `
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    Belirtilen kriterlere uygun matris bulunamadı.
+                </div>
+            `;
+        } else {
+            let html = `
+                <div class="alert alert-success">
+                    <i class="fas fa-check-circle me-2"></i>
+                    <strong>${candidateMatrices.length}</strong> matris için ters matris hesaplanacak.
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Başlık</th>
+                                <th>Grup</th>
+                                <th>Smallest XOR</th>
+                                <th>Ters Matris</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+            
+            candidateMatrices.slice(0, 20).forEach(matrix => {
+                html += `
+                    <tr>
+                        <td>${matrix.id}</td>
+                        <td>${escapeHtml(matrix.title)}</td>
+                        <td>${escapeHtml(matrix.group || '-')}</td>
+                        <td>${matrix.smallest_xor || '-'}</td>
+                        <td>
+                            ${matrix.inverse_matrix_id ? 
+                                '<span class="badge bg-success">Var</span>' : 
+                                '<span class="badge bg-warning">Yok</span>'
+                            }
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            html += '</tbody></table>';
+            
+            if (candidateMatrices.length > 20) {
+                html += `
+                    <div class="text-muted text-center mt-2">
+                        <small>... ve ${candidateMatrices.length - 20} matris daha</small>
+                    </div>
+                `;
+            }
+            
+            html += '</div>';
+            previewContent.innerHTML = html;
+        }
+        
+        previewDiv.style.display = 'block';
+        
+    } catch (error) {
+        console.error('Preview error:', error);
+        showAlert('Önizleme hazırlanırken hata oluştu: ' + error.message, 'danger');
+    } finally {
+        hideLoading();
+    }
+}
+
+async function startBulkInverse() {
+    const maxSmallestXor = document.getElementById('maxSmallestXor').value;
+    const batchSize = parseInt(document.getElementById('batchSize').value) || 10;
+    const skipExisting = document.getElementById('skipExisting').checked;
+    const calculateAlgorithms = document.getElementById('calculateAlgorithms').checked;
+    
+    if (!maxSmallestXor) {
+        showAlert('Lütfen maksimum smallest XOR değerini girin', 'warning');
+        return;
+    }
+
+    // Hide preview and results, show progress
+    document.getElementById('bulkInversePreview').style.display = 'none';
+    document.getElementById('bulkInverseResults').style.display = 'none';
+    document.getElementById('bulkInverseProgress').style.display = 'block';
+    
+    updateBulkInverseProgress(0, 0, 'İşlem başlatılıyor...');
+    
+    try {
+        const response = await fetch('/api/matrices/bulk-inverse', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                max_smallest_xor: parseInt(maxSmallestXor),
+                batch_size: batchSize,
+                skip_existing: skipExisting,
+                calculate_algorithms: calculateAlgorithms
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.message || 'Toplu ters alma başlatılamadı');
+        }
+        
+        updateBulkInverseProgress(0, 0, data.message);
+        
+        // Show success message
+        setTimeout(() => {
+            showBulkInverseResults([]);
+            showAlert('Toplu ters alma işlemi arka planda başlatıldı. Sonuçları görmek için matrisler sayfasını yenileyin.', 'success');
+        }, 2000);
+        
+    } catch (error) {
+        console.error('Bulk inverse error:', error);
+        updateBulkInverseProgress(0, 0, 'Hata oluştu: ' + error.message);
+        showAlert('Toplu ters alma işleminde hata oluştu: ' + error.message, 'danger');
+    }
+}
+
+function updateBulkInverseProgress(current, total, status) {
+    const progressBar = document.getElementById('inverseProgressBar');
+    const progressText = document.getElementById('inverseProgressText');
+    const statusText = document.getElementById('inverseStatusText');
+    
+    const percentage = total > 0 ? Math.round((current / total) * 100) : 0;
+    
+    progressBar.style.width = percentage + '%';
+    progressBar.textContent = percentage + '%';
+    progressText.textContent = `${current} / ${total}`;
+    statusText.textContent = status;
+}
+
+function showBulkInverseResults(results) {
+    const resultsDiv = document.getElementById('bulkInverseResults');
+    const resultsContent = document.getElementById('resultsContent');
+    
+    let html = `
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle me-2"></i>
+            Toplu ters alma işlemi arka planda çalışmaktadır. Sonuçları görmek için matrisler sayfasını kontrol edin.
+        </div>
+    `;
+    
+    resultsContent.innerHTML = html;
+    resultsDiv.style.display = 'block';
+    
+    // Hide progress
+    document.getElementById('bulkInverseProgress').style.display = 'none';
+}
+
+async function loadBulkInverseStats() {
+    try {
+        const response = await fetch('/api/matrices?limit=1');
+        const data = await response.json();
+        
+        if (response.ok) {
+            document.getElementById('totalMatricesCount').textContent = data.total || 0;
+            
+            // Count matrices with inverse
+            const allResponse = await fetch('/api/matrices?limit=1000');
+            const allData = await allResponse.json();
+            
+            if (allResponse.ok) {
+                const withInverse = (allData.matrices || []).filter(m => m.inverse_matrix_id).length;
+                document.getElementById('withInverseCount').textContent = withInverse;
+            }
+        }
+    } catch (error) {
+        console.error('Stats loading error:', error);
     }
 } 
