@@ -74,6 +74,15 @@ type BulkInverseResult struct {
 	Message       string `json:"message"`
 }
 
+// GetInversePairsResponse represents the response for inverse pairs
+type GetInversePairsResponse struct {
+	Pairs      []*InversePair `json:"pairs"`
+	Total      int            `json:"total"`
+	Page       int            `json:"page"`
+	Limit      int            `json:"limit"`
+	TotalPages int            `json:"total_pages"`
+}
+
 // saveMatrixHandler saves a matrix to the database
 func saveMatrixHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -668,6 +677,76 @@ func bulkInverseHandler(w http.ResponseWriter, r *http.Request) {
 		Results:        []BulkInverseResult{},
 		Message:        fmt.Sprintf("%d matris için ters alma işlemi başlatıldı", len(matrices)),
 	}
+
+	json.NewEncoder(w).Encode(response)
+}
+
+// getInversePairsHandler handles requests for inverse matrix pairs
+func getInversePairsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// Parse query parameters
+	pageStr := r.URL.Query().Get("page")
+	limitStr := r.URL.Query().Get("limit")
+	groupFilter := r.URL.Query().Get("group")
+	maxCombinedXorStr := r.URL.Query().Get("max_combined_xor")
+	sortOrder := r.URL.Query().Get("sort")
+
+	// Default values
+	page := 1
+	limit := 25
+
+	// Parse page
+	if pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
+		}
+	}
+
+	// Parse limit
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
+			limit = l
+		}
+	}
+
+	// Parse max combined XOR
+	var maxCombinedXor *int
+	if maxCombinedXorStr != "" {
+		if val, err := strconv.Atoi(maxCombinedXorStr); err == nil && val > 0 {
+			maxCombinedXor = &val
+		}
+	}
+
+	// Default sort order
+	if sortOrder == "" {
+		sortOrder = "combined_asc"
+	}
+
+	log.Printf("📊 [INVERSE-PAIRS] Ters matris çiftleri isteniyor - Sayfa: %d, Limit: %d, Grup: '%s', Max Combined XOR: %v, Sıralama: %s", 
+		page, limit, groupFilter, maxCombinedXor, sortOrder)
+
+	// Get inverse pairs from database
+	pairs, total, err := db.GetInversePairs(page, limit, groupFilter, maxCombinedXor, sortOrder)
+	if err != nil {
+		log.Printf("❌ [INVERSE-PAIRS] Ters matris çiftleri alınamadı: %v", err)
+		http.Error(w, "Ters matris çiftleri alınamadı: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Calculate total pages
+	totalPages := (total + limit - 1) / limit
+
+	response := GetInversePairsResponse{
+		Pairs:      pairs,
+		Total:      total,
+		Page:       page,
+		Limit:      limit,
+		TotalPages: totalPages,
+	}
+
+	log.Printf("✅ [INVERSE-PAIRS] %d ters matris çifti döndürüldü (Toplam: %d, Sayfa: %d/%d)", 
+		len(pairs), total, page, totalPages)
 
 	json.NewEncoder(w).Encode(response)
 } 

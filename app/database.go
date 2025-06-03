@@ -40,6 +40,26 @@ type MatrixRecord struct {
 	UpdatedAt           time.Time `json:"updated_at"`
 }
 
+// InversePair represents a pair of original and inverse matrices
+type InversePair struct {
+	OriginalID       int       `json:"original_id"`
+	OriginalTitle    string    `json:"original_title"`
+	OriginalXor      int       `json:"original_xor"`
+	OriginalBoyarXor *int      `json:"original_boyar_xor,omitempty"`
+	OriginalPaarXor  *int      `json:"original_paar_xor,omitempty"`
+	OriginalSlpXor   *int      `json:"original_slp_xor,omitempty"`
+	InverseID        int       `json:"inverse_id"`
+	InverseTitle     string    `json:"inverse_title"`
+	InverseXor       int       `json:"inverse_xor"`
+	InverseBoyarXor  *int      `json:"inverse_boyar_xor,omitempty"`
+	InversePaarXor   *int      `json:"inverse_paar_xor,omitempty"`
+	InverseSlpXor    *int      `json:"inverse_slp_xor,omitempty"`
+	CombinedXor      int       `json:"combined_xor"`
+	Group            string    `json:"group"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
 // Database represents the PostgreSQL database
 type Database struct {
 	db *sql.DB
@@ -1611,4 +1631,155 @@ func (d *Database) GetMatricesForBulkInverse(maxSmallestXor int, skipExisting bo
 	}
 
 	return matrices, nil
+}
+
+// GetInversePairs returns pairs of matrices and their inverses with pagination and filtering
+func (d *Database) GetInversePairs(page, limit int, groupFilter string, maxCombinedXor *int, sortOrder string) ([]*InversePair, int, error) {
+	// Build the WHERE clause
+	whereClause := "WHERE o.inverse_matrix_id IS NOT NULL"
+	args := []interface{}{}
+	argIndex := 1
+
+	if groupFilter != "" {
+		whereClause += fmt.Sprintf(" AND LOWER(o.group_name) LIKE LOWER($%d)", argIndex)
+		args = append(args, "%"+groupFilter+"%")
+		argIndex++
+	}
+
+	if maxCombinedXor != nil {
+		whereClause += fmt.Sprintf(" AND (COALESCE(o.smallest_xor, o.ham_xor_count) + COALESCE(i.smallest_xor, i.ham_xor_count)) <= $%d", argIndex)
+		args = append(args, *maxCombinedXor)
+		argIndex++
+	}
+
+	// Build the ORDER BY clause
+	var orderBy string
+	switch sortOrder {
+	case "combined_desc":
+		orderBy = "ORDER BY combined_xor DESC"
+	case "original_asc":
+		orderBy = "ORDER BY original_xor ASC"
+	case "original_desc":
+		orderBy = "ORDER BY original_xor DESC"
+	case "inverse_asc":
+		orderBy = "ORDER BY inverse_xor ASC"
+	case "inverse_desc":
+		orderBy = "ORDER BY inverse_xor DESC"
+	default: // combined_asc
+		orderBy = "ORDER BY combined_xor ASC"
+	}
+
+	// Count total records
+	countQuery := fmt.Sprintf(`
+		SELECT COUNT(*)
+		FROM matrix_records o
+		JOIN matrix_records i ON o.inverse_matrix_id = i.id
+		%s
+	`, whereClause)
+
+	var total int
+	err := d.db.QueryRow(countQuery, args...).Scan(&total)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to count inverse pairs: %v", err)
+	}
+
+	// Calculate offset
+	offset := (page - 1) * limit
+
+	// Main query
+	query := fmt.Sprintf(`
+		SELECT 
+			o.id as original_id,
+			o.title as original_title,
+			COALESCE(o.smallest_xor, o.ham_xor_count) as original_xor,
+			o.boyar_xor_count as original_boyar_xor,
+			o.paar_xor_count as original_paar_xor,
+			o.slp_xor_count as original_slp_xor,
+			i.id as inverse_id,
+			i.title as inverse_title,
+			COALESCE(i.smallest_xor, i.ham_xor_count) as inverse_xor,
+			i.boyar_xor_count as inverse_boyar_xor,
+			i.paar_xor_count as inverse_paar_xor,
+			i.slp_xor_count as inverse_slp_xor,
+			(COALESCE(o.smallest_xor, o.ham_xor_count) + COALESCE(i.smallest_xor, i.ham_xor_count)) as combined_xor,
+			COALESCE(o.group_name, '') as group_name,
+			o.created_at,
+			o.updated_at
+		FROM matrix_records o
+		JOIN matrix_records i ON o.inverse_matrix_id = i.id
+		%s
+		%s
+		LIMIT $%d OFFSET $%d
+	`, whereClause, orderBy, argIndex, argIndex+1)
+
+	args = append(args, limit, offset)
+
+	rows, err := d.db.Query(query, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to query inverse pairs: %v", err)
+	}
+	defer rows.Close()
+
+	var pairs []*InversePair
+	for rows.Next() {
+		var pair InversePair
+		var originalBoyarXor, originalPaarXor, originalSlpXor sql.NullInt64
+		var inverseBoyarXor, inversePaarXor, inverseSlpXor sql.NullInt64
+
+		err := rows.Scan(
+			&pair.OriginalID,
+			&pair.OriginalTitle,
+			&pair.OriginalXor,
+			&originalBoyarXor,
+			&originalPaarXor,
+			&originalSlpXor,
+			&pair.InverseID,
+			&pair.InverseTitle,
+			&pair.InverseXor,
+			&inverseBoyarXor,
+			&inversePaarXor,
+			&inverseSlpXor,
+			&pair.CombinedXor,
+			&pair.Group,
+			&pair.CreatedAt,
+			&pair.UpdatedAt,
+		)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to scan inverse pair: %v", err)
+		}
+
+		// Handle nullable fields
+		if originalBoyarXor.Valid {
+			val := int(originalBoyarXor.Int64)
+			pair.OriginalBoyarXor = &val
+		}
+		if originalPaarXor.Valid {
+			val := int(originalPaarXor.Int64)
+			pair.OriginalPaarXor = &val
+		}
+		if originalSlpXor.Valid {
+			val := int(originalSlpXor.Int64)
+			pair.OriginalSlpXor = &val
+		}
+		if inverseBoyarXor.Valid {
+			val := int(inverseBoyarXor.Int64)
+			pair.InverseBoyarXor = &val
+		}
+		if inversePaarXor.Valid {
+			val := int(inversePaarXor.Int64)
+			pair.InversePaarXor = &val
+		}
+		if inverseSlpXor.Valid {
+			val := int(inverseSlpXor.Int64)
+			pair.InverseSlpXor = &val
+		}
+
+		pairs = append(pairs, &pair)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("error iterating inverse pairs: %v", err)
+	}
+
+	return pairs, total, nil
 } 

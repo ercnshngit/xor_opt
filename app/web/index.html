@@ -54,7 +54,7 @@
                     </div>
                     <div class="card-body">
                         <!-- Navigation Tabs -->
-                        <ul class="nav nav-tabs mb-4" id="mainTabs" role="tablist">
+                        <ul class="nav nav-tabs" id="mainTabs" role="tablist">
                             <li class="nav-item" role="presentation">
                                 <button class="nav-link active" id="matrices-tab" data-bs-toggle="tab" data-bs-target="#matrices" type="button" role="tab">
                                     <i class="fas fa-table me-2"></i>Matrisler
@@ -73,6 +73,11 @@
                             <li class="nav-item" role="presentation">
                                 <button class="nav-link" id="bulk-inverse-tab" data-bs-toggle="tab" data-bs-target="#bulk-inverse" type="button" role="tab">
                                     <i class="fas fa-exchange-alt me-2"></i>Toplu Ters Alma
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="inverse-pairs-tab" data-bs-toggle="tab" data-bs-target="#inverse-pairs" type="button" role="tab">
+                                    <i class="fas fa-link me-2"></i>Ters Matris Çiftleri
                                 </button>
                             </li>
                         </ul>
@@ -595,6 +600,93 @@ HamXOR Sayisi:
                                                             <div class="h5 mb-0" id="withInverseCount">-</div>
                                                             <small class="text-muted">Ters Matrisi Var</small>
                                                         </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Inverse Pairs Tab -->
+                            <div class="tab-pane fade" id="inverse-pairs" role="tabpanel">
+                                <div class="row">
+                                    <div class="col-12">
+                                        <div class="card">
+                                            <div class="card-header d-flex justify-content-between align-items-center">
+                                                <h5 class="mb-0">
+                                                    <i class="fas fa-link me-2"></i>Ters Matris Çiftleri
+                                                </h5>
+                                                <div class="d-flex gap-2">
+                                                    <button class="btn btn-outline-primary btn-sm" onclick="loadInversePairs()">
+                                                        <i class="fas fa-sync me-1"></i>Yenile
+                                                    </button>
+                                                    <div class="dropdown">
+                                                        <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                                            <i class="fas fa-sort me-1"></i>Sıralama
+                                                        </button>
+                                                        <ul class="dropdown-menu">
+                                                            <li><a class="dropdown-item" href="#" onclick="setSortOrder('combined_asc')">Toplam XOR (Artan)</a></li>
+                                                            <li><a class="dropdown-item" href="#" onclick="setSortOrder('combined_desc')">Toplam XOR (Azalan)</a></li>
+                                                            <li><a class="dropdown-item" href="#" onclick="setSortOrder('original_asc')">Orijinal XOR (Artan)</a></li>
+                                                            <li><a class="dropdown-item" href="#" onclick="setSortOrder('inverse_asc')">Ters XOR (Artan)</a></li>
+                                                        </ul>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="card-body">
+                                                <div class="alert alert-info">
+                                                    <i class="fas fa-info-circle me-2"></i>
+                                                    Bu sayfa ters matrisi bulunan tüm matris çiftlerini gösterir. 
+                                                    Çiftler hem orijinal hem de ters matrisin en küçük XOR değerlerinin toplamına göre sıralanır.
+                                                </div>
+
+                                                <!-- Filters -->
+                                                <div class="row mb-3">
+                                                    <div class="col-md-3">
+                                                        <label for="pairGroupFilter" class="form-label">Grup Filtresi</label>
+                                                        <input type="text" class="form-control" id="pairGroupFilter" placeholder="Grup ile ara...">
+                                                    </div>
+                                                    <div class="col-md-3">
+                                                        <label for="maxCombinedXor" class="form-label">Maksimum Toplam XOR</label>
+                                                        <input type="number" class="form-control" id="maxCombinedXor" placeholder="Örn: 50">
+                                                    </div>
+                                                    <div class="col-md-3">
+                                                        <label for="pairPageSize" class="form-label">Sayfa Boyutu</label>
+                                                        <select class="form-select" id="pairPageSize">
+                                                            <option value="10">10</option>
+                                                            <option value="25" selected>25</option>
+                                                            <option value="50">50</option>
+                                                            <option value="100">100</option>
+                                                        </select>
+                                                    </div>
+                                                    <div class="col-md-3 d-flex align-items-end">
+                                                        <button class="btn btn-primary" onclick="applyPairFilters()">
+                                                            <i class="fas fa-filter me-1"></i>Filtrele
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Loading indicator -->
+                                                <div id="pairsLoading" class="text-center py-4" style="display: none;">
+                                                    <div class="spinner-border text-primary" role="status">
+                                                        <span class="visually-hidden">Yükleniyor...</span>
+                                                    </div>
+                                                    <div class="mt-2">Ters matris çiftleri yükleniyor...</div>
+                                                </div>
+
+                                                <!-- Pairs container -->
+                                                <div id="inversePairsContainer">
+                                                    <!-- Pairs will be loaded here -->
+                                                </div>
+
+                                                <!-- Pagination -->
+                                                <div id="pairsPaginationContainer" class="mt-4" style="display: none;">
+                                                    <div class="d-flex justify-content-between align-items-center">
+                                                        <div id="pairsPaginationInfo" class="text-muted"></div>
+                                                        <nav>
+                                                            <ul class="pagination mb-0" id="pairsPagination"></ul>
+                                                        </nav>
                                                     </div>
                                                 </div>
                                             </div>

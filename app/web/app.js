@@ -15,6 +15,13 @@ let currentFilters = {
     slpXorMax: null
 };
 
+// Inverse Pairs functionality
+let currentPairPage = 1;
+let currentPairLimit = 25;
+let currentPairGroupFilter = '';
+let currentMaxCombinedXor = null;
+let currentSortOrder = 'combined_asc';
+
 // Initialize the application
 document.addEventListener('DOMContentLoaded', function() {
     // Load URL parameters
@@ -237,6 +244,21 @@ function setupEventListeners() {
             loadBulkInverseStats();
         });
     }
+
+    // Tab change event listeners
+    document.querySelectorAll('a[data-bs-toggle="tab"]').forEach(tab => {
+        tab.addEventListener('shown.bs.tab', function (e) {
+            const targetId = e.target.getAttribute('href').substring(1);
+            
+            if (targetId === 'matrices') {
+                loadMatrices();
+            } else if (targetId === 'bulk-inverse') {
+                loadBulkInverseStats();
+            } else if (targetId === 'inverse-pairs') {
+                loadInversePairs();
+            }
+        });
+    });
 }
 
 // Load matrices from API
@@ -1366,8 +1388,8 @@ async function previewBulkInverse() {
     showLoading('Önizleme hazırlanıyor...');
     
     try {
-        // Get matrices that match criteria
-        const response = await fetch(`/api/matrices?limit=1000&slp_xor_max=${maxSmallestXor}`);
+        // Get all matrices without any XOR filter - we'll filter on smallest_xor field
+        const response = await fetch(`/api/matrices?limit=10000`);
         const data = await response.json();
         
         if (!response.ok) {
@@ -1376,6 +1398,7 @@ async function previewBulkInverse() {
 
         const matrices = data.matrices || [];
         const candidateMatrices = matrices.filter(matrix => {
+            // Filter based on smallest_xor field specifically
             const smallestXor = matrix.smallest_xor;
             if (!smallestXor || smallestXor >= parseInt(maxSmallestXor)) {
                 return false;
@@ -1568,5 +1591,291 @@ async function loadBulkInverseStats() {
         }
     } catch (error) {
         console.error('Stats loading error:', error);
+    }
+}
+
+// Load inverse pairs
+async function loadInversePairs() {
+    try {
+        showPairsLoading(true);
+        
+        const params = new URLSearchParams({
+            page: currentPairPage,
+            limit: currentPairLimit
+        });
+        
+        if (currentPairGroupFilter) {
+            params.append('group', currentPairGroupFilter);
+        }
+        
+        if (currentMaxCombinedXor) {
+            params.append('max_combined_xor', currentMaxCombinedXor);
+        }
+        
+        params.append('sort', currentSortOrder);
+        
+        const response = await fetch(`/api/inverse-pairs?${params}`);
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.message || 'Ters matris çiftleri alınamadı');
+        }
+        
+        displayInversePairs(data.pairs || []);
+        setupPairsPagination(data.page, data.total_pages, data.total);
+        
+    } catch (error) {
+        console.error('Error loading inverse pairs:', error);
+        showAlert('Ters matris çiftleri yüklenirken hata oluştu: ' + error.message, 'danger');
+        document.getElementById('inversePairsContainer').innerHTML = `
+            <div class="alert alert-danger">
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                Ters matris çiftleri yüklenemedi: ${error.message}
+            </div>
+        `;
+    } finally {
+        showPairsLoading(false);
+    }
+}
+
+// Display inverse pairs
+function displayInversePairs(pairs) {
+    const container = document.getElementById('inversePairsContainer');
+    
+    if (!pairs || pairs.length === 0) {
+        container.innerHTML = `
+            <div class="text-center py-5">
+                <i class="fas fa-link fa-3x text-muted mb-3"></i>
+                <h5 class="text-muted">Henüz ters matris çifti bulunmuyor</h5>
+                <p class="text-muted">Ters matris hesaplamak için "Toplu Ters Alma" sekmesini kullanın.</p>
+            </div>
+        `;
+        return;
+    }
+
+    const html = pairs.map(pair => `
+        <div class="card mb-3">
+            <div class="card-header">
+                <div class="row align-items-center">
+                    <div class="col-md-8">
+                        <h6 class="mb-0">
+                            <i class="fas fa-link me-2 text-primary"></i>
+                            Matris Çifti - Toplam XOR: <span class="badge bg-primary">${pair.combined_xor}</span>
+                        </h6>
+                    </div>
+                    <div class="col-md-4 text-end">
+                        <small class="text-muted">Grup: ${pair.group || 'Belirtilmemiş'}</small>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <!-- Original Matrix -->
+                    <div class="col-md-6">
+                        <div class="border rounded p-3 h-100">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <h6 class="text-success mb-0">
+                                    <i class="fas fa-table me-1"></i>Orijinal Matris
+                                </h6>
+                                <button class="btn btn-sm btn-outline-success" onclick="viewMatrix(${pair.original_id})">
+                                    <i class="fas fa-eye me-1"></i>Detay
+                                </button>
+                            </div>
+                            <div class="mb-2">
+                                <strong>ID:</strong> ${pair.original_id} | 
+                                <strong>Başlık:</strong> ${escapeHtml(pair.original_title)}
+                            </div>
+                            <div class="mb-2">
+                                <strong>Smallest XOR:</strong> <span class="badge bg-success">${pair.original_xor}</span>
+                            </div>
+                            <div class="row text-center">
+                                <div class="col-4">
+                                    <small class="text-muted">Boyar</small><br>
+                                    <span class="badge bg-secondary">${pair.original_boyar_xor || 'N/A'}</span>
+                                </div>
+                                <div class="col-4">
+                                    <small class="text-muted">Paar</small><br>
+                                    <span class="badge bg-secondary">${pair.original_paar_xor || 'N/A'}</span>
+                                </div>
+                                <div class="col-4">
+                                    <small class="text-muted">SLP</small><br>
+                                    <span class="badge bg-secondary">${pair.original_slp_xor || 'N/A'}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Inverse Matrix -->
+                    <div class="col-md-6">
+                        <div class="border rounded p-3 h-100">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <h6 class="text-warning mb-0">
+                                    <i class="fas fa-exchange-alt me-1"></i>Ters Matris
+                                </h6>
+                                <button class="btn btn-sm btn-outline-warning" onclick="viewMatrix(${pair.inverse_id})">
+                                    <i class="fas fa-eye me-1"></i>Detay
+                                </button>
+                            </div>
+                            <div class="mb-2">
+                                <strong>ID:</strong> ${pair.inverse_id} | 
+                                <strong>Başlık:</strong> ${escapeHtml(pair.inverse_title)}
+                            </div>
+                            <div class="mb-2">
+                                <strong>Smallest XOR:</strong> <span class="badge bg-warning">${pair.inverse_xor}</span>
+                            </div>
+                            <div class="row text-center">
+                                <div class="col-4">
+                                    <small class="text-muted">Boyar</small><br>
+                                    <span class="badge bg-secondary">${pair.inverse_boyar_xor || 'N/A'}</span>
+                                </div>
+                                <div class="col-4">
+                                    <small class="text-muted">Paar</small><br>
+                                    <span class="badge bg-secondary">${pair.inverse_paar_xor || 'N/A'}</span>
+                                </div>
+                                <div class="col-4">
+                                    <small class="text-muted">SLP</small><br>
+                                    <span class="badge bg-secondary">${pair.inverse_slp_xor || 'N/A'}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Additional Info -->
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="bg-light rounded p-2">
+                            <div class="row text-center">
+                                <div class="col-md-3">
+                                    <small class="text-muted">Toplam XOR</small><br>
+                                    <strong class="text-primary">${pair.combined_xor}</strong>
+                                </div>
+                                <div class="col-md-3">
+                                    <small class="text-muted">XOR Farkı</small><br>
+                                    <strong>${Math.abs(pair.original_xor - pair.inverse_xor)}</strong>
+                                </div>
+                                <div class="col-md-3">
+                                    <small class="text-muted">Oluşturulma</small><br>
+                                    <small>${formatDate(pair.created_at)}</small>
+                                </div>
+                                <div class="col-md-3">
+                                    <small class="text-muted">Güncelleme</small><br>
+                                    <small>${formatDate(pair.updated_at)}</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `).join('');
+
+    container.innerHTML = html;
+}
+
+// Setup pairs pagination
+function setupPairsPagination(currentPage, totalPages, totalItems) {
+    const container = document.getElementById('pairsPaginationContainer');
+    const pagination = document.getElementById('pairsPagination');
+    const paginationInfo = document.getElementById('pairsPaginationInfo');
+    
+    if (totalPages <= 1) {
+        container.style.display = 'none';
+        return;
+    }
+    
+    container.style.display = 'block';
+    
+    // Update pagination info
+    const startItem = (currentPage - 1) * currentPairLimit + 1;
+    const endItem = Math.min(currentPage * currentPairLimit, totalItems);
+    paginationInfo.textContent = `${startItem}-${endItem} / ${totalItems} çift gösteriliyor (Sayfa ${currentPage}/${totalPages})`;
+    
+    let html = '';
+    
+    // Previous button
+    html += `
+        <li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
+            <a class="page-link" href="#" ${currentPage > 1 ? `onclick="changePairPage(${currentPage - 1})"` : ''} aria-label="Previous">
+                <span aria-hidden="true">&laquo;</span>
+            </a>
+        </li>
+    `;
+    
+    // Page numbers
+    const startPage = Math.max(1, currentPage - 2);
+    const endPage = Math.min(totalPages, currentPage + 2);
+    
+    if (startPage > 1) {
+        html += `<li class="page-item"><a class="page-link" href="#" onclick="changePairPage(1)">1</a></li>`;
+        if (startPage > 2) {
+            html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+        }
+    }
+    
+    for (let i = startPage; i <= endPage; i++) {
+        html += `
+            <li class="page-item ${i === currentPage ? 'active' : ''}">
+                <a class="page-link" href="#" ${i !== currentPage ? `onclick="changePairPage(${i})"` : ''}>${i}</a>
+            </li>
+        `;
+    }
+    
+    if (endPage < totalPages) {
+        if (endPage < totalPages - 1) {
+            html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+        }
+        html += `<li class="page-item"><a class="page-link" href="#" onclick="changePairPage(${totalPages})">${totalPages}</a></li>`;
+    }
+    
+    // Next button
+    html += `
+        <li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
+            <a class="page-link" href="#" ${currentPage < totalPages ? `onclick="changePairPage(${currentPage + 1})"` : ''} aria-label="Next">
+                <span aria-hidden="true">&raquo;</span>
+            </a>
+        </li>
+    `;
+    
+    pagination.innerHTML = html;
+}
+
+// Change pair page
+function changePairPage(page) {
+    if (page < 1) return;
+    currentPairPage = page;
+    loadInversePairs();
+}
+
+// Apply pair filters
+function applyPairFilters() {
+    currentPairGroupFilter = document.getElementById('pairGroupFilter').value.trim();
+    const maxCombined = document.getElementById('maxCombinedXor').value;
+    currentMaxCombinedXor = maxCombined ? parseInt(maxCombined) : null;
+    currentPairLimit = parseInt(document.getElementById('pairPageSize').value);
+    currentPairPage = 1; // Reset to first page
+    loadInversePairs();
+}
+
+// Set sort order
+function setSortOrder(order) {
+    currentSortOrder = order;
+    currentPairPage = 1; // Reset to first page
+    loadInversePairs();
+}
+
+// Show/hide pairs loading
+function showPairsLoading(show) {
+    const loadingDiv = document.getElementById('pairsLoading');
+    const containerDiv = document.getElementById('inversePairsContainer');
+    const paginationDiv = document.getElementById('pairsPaginationContainer');
+    
+    if (show) {
+        loadingDiv.style.display = 'block';
+        containerDiv.style.display = 'none';
+        paginationDiv.style.display = 'none';
+    } else {
+        loadingDiv.style.display = 'none';
+        containerDiv.style.display = 'block';
     }
 } 
