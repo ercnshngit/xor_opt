@@ -83,6 +83,13 @@ type GetInversePairsResponse struct {
 	TotalPages int            `json:"total_pages"`
 }
 
+// MissingAlgorithmsResponse represents the response for missing algorithms count
+type MissingAlgorithmsResponse struct {
+	MissingCount int `json:"missing_count"`
+	TotalCount   int `json:"total_count"`
+	Message      string `json:"message"`
+}
+
 // saveMatrixHandler saves a matrix to the database
 func saveMatrixHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -255,7 +262,7 @@ func recalculateHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Default algorithms if not specified
 	if len(req.Algorithms) == 0 {
-		req.Algorithms = []string{"boyar", "paar", "slp"}
+		req.Algorithms = []string{"boyar", "paar", "slp", "sbp"}
 	}
 
 	// Get matrix from database
@@ -281,7 +288,7 @@ func recalculateHandler(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		log.Printf("Matris %d için algoritma hesaplama başlatıldı", req.MatrixID)
 
-		var boyarResult, paarResult, slpResult *AlgResult
+		var boyarResult, paarResult, slpResult, sbpResult *AlgResult
 
 		// Run requested algorithms
 		for _, algorithm := range req.Algorithms {
@@ -307,11 +314,24 @@ func recalculateHandler(w http.ResponseWriter, r *http.Request) {
 				} else {
 					log.Printf("SLP algoritması hatası (ID %d): %v", req.MatrixID, err)
 				}
+			case "sbp":
+				sbp := NewSBPAlgorithm(10)
+				if result, err := sbp.Solve(matrix); err == nil {
+					sbpResult = &result
+				} else {
+					log.Printf("SBP algoritması hatası (ID %d): %v", req.MatrixID, err)
+				}
 			}
 		}
 
 		// Update database with results
-		err = db.UpdateMatrixResults(req.MatrixID, boyarResult, paarResult, slpResult)
+		if len(req.Algorithms) == 1 && strings.ToLower(req.Algorithms[0]) == "sbp" && sbpResult != nil {
+			// Only SBP requested, use specific SBP update function
+			err = db.UpdateSBPResults(req.MatrixID, sbpResult)
+		} else {
+			// Multiple algorithms or non-SBP, use full update function
+			err = db.UpdateMatrixResultsWithSBP(req.MatrixID, boyarResult, paarResult, slpResult, sbpResult)
+		}
 		if err != nil {
 			log.Printf("Algoritma sonuçları güncellenemedi (ID %d): %v", req.MatrixID, err)
 		} else {
@@ -357,7 +377,7 @@ func processAndSaveMatrixHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Run all algorithms
-	var boyarResult, paarResult, slpResult *AlgResult
+	var boyarResult, paarResult, slpResult, sbpResult *AlgResult
 
 	// Boyar algorithm
 	boyar := NewBoyarSLP(10)
@@ -377,8 +397,14 @@ func processAndSaveMatrixHandler(w http.ResponseWriter, r *http.Request) {
 		slpResult = &result
 	}
 
+	// SBP algorithm
+	sbp := NewSBPAlgorithm(10)
+	if result, err := sbp.Solve(req.Matrix); err == nil {
+		sbpResult = &result
+	}
+
 	// Update database with results
-	err = db.UpdateMatrixResults(record.ID, boyarResult, paarResult, slpResult)
+	err = db.UpdateMatrixResultsWithSBP(record.ID, boyarResult, paarResult, slpResult, sbpResult)
 	if err != nil {
 		http.Error(w, "Sonuçlar güncellenemedi: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -406,7 +432,7 @@ func bulkRecalculateHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Default algorithms if not specified
 	if len(req.Algorithms) == 0 {
-		req.Algorithms = []string{"boyar", "paar", "slp"}
+		req.Algorithms = []string{"boyar", "paar", "slp", "sbp"}
 	}
 
 	// Default limit if not specified
@@ -452,7 +478,7 @@ func bulkRecalculateHandler(w http.ResponseWriter, r *http.Request) {
 				log.Printf("Ham XOR güncellenemedi (ID %d): %v", matrix.ID, err)
 			}
 
-			var boyarResult, paarResult, slpResult *AlgResult
+			var boyarResult, paarResult, slpResult, sbpResult *AlgResult
 
 			// Run requested algorithms
 			for _, algorithm := range req.Algorithms {
@@ -478,11 +504,18 @@ func bulkRecalculateHandler(w http.ResponseWriter, r *http.Request) {
 					} else {
 						log.Printf("SLP algoritması hatası (ID %d): %v", matrix.ID, err)
 					}
+				case "sbp":
+					sbp := NewSBPAlgorithm(10)
+					if result, err := sbp.Solve(matrixData); err == nil {
+						sbpResult = &result
+					} else {
+						log.Printf("SBP algoritması hatası (ID %d): %v", matrix.ID, err)
+					}
 				}
 			}
 
 			// Update database with results
-			err = db.UpdateMatrixResults(matrix.ID, boyarResult, paarResult, slpResult)
+			err = db.UpdateMatrixResultsWithSBP(matrix.ID, boyarResult, paarResult, slpResult, sbpResult)
 			if err != nil {
 				log.Printf("Algoritma sonuçları güncellenemedi (ID %d): %v", matrix.ID, err)
 			} else {
@@ -649,7 +682,7 @@ func bulkInverseHandler(w http.ResponseWriter, r *http.Request) {
 							}
 
 							// Update database
-							if updateErr := db.UpdateMatrixResults(matrixID, boyarResult, paarResult, slpResult); updateErr != nil {
+							if updateErr := db.UpdateMatrixResults(matrixID, boyarResult, paarResult, slpResult, nil); updateErr != nil {
 								log.Printf("❌ [BULK-INVERSE-UPDATE] %s sonuçları güncellenemedi: %v", title, updateErr)
 							} else {
 								log.Printf("✅ [BULK-INVERSE-UPDATE] %s sonuçları güncellendi", title)
@@ -747,6 +780,135 @@ func getInversePairsHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("✅ [INVERSE-PAIRS] %d ters matris çifti döndürüldü (Toplam: %d, Sayfa: %d/%d)", 
 		len(pairs), total, page, totalPages)
+
+	json.NewEncoder(w).Encode(response)
+}
+
+// sbpHandler handles SBP algorithm requests
+func sbpHandler(w http.ResponseWriter, r *http.Request) {
+	startTime := time.Now()
+	log.Printf("[SBP] İstek başladı - Method: %s, URL: %s", r.Method, r.URL.Path)
+	
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == "OPTIONS" {
+		log.Printf("[SBP] OPTIONS isteği işlendi")
+		return
+	}
+
+	if r.Method != "POST" {
+		log.Printf("[SBP] HATA: Geçersiz method: %s", r.Method)
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var request struct {
+		Matrices [][][]string `json:"matrices"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		log.Printf("[SBP] HATA: JSON decode hatası: %v", err)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "Invalid JSON: " + err.Error(),
+		})
+		return
+	}
+
+	log.Printf("[SBP] %d matris alındı", len(request.Matrices))
+
+	var results []map[string]interface{}
+	for i, matrix := range request.Matrices {
+		log.Printf("[SBP] Matris %d işleniyor (%dx%d)", i+1, len(matrix), len(matrix[0]))
+		
+		if len(matrix) == 0 {
+			log.Printf("[SBP] HATA: Matris %d boş", i+1)
+			results = append(results, map[string]interface{}{
+				"matrix_index": i,
+				"error":        "Empty matrix",
+				"xor_count":    0,
+				"depth":        0,
+				"program":      []string{},
+			})
+			continue
+		}
+
+		sbp := NewSBPAlgorithm(10) // depth limit 10
+		err := sbp.ReadTargetMatrix(matrix)
+		if err != nil {
+			log.Printf("[SBP] HATA: Matris %d okuma hatası: %v", i+1, err)
+			results = append(results, map[string]interface{}{
+				"matrix_index": i,
+				"error":        err.Error(),
+				"xor_count":    0,
+				"depth":        0,
+				"program":      []string{},
+			})
+			continue
+		}
+
+		err = sbp.InitBase()
+		if err != nil {
+			log.Printf("[SBP] HATA: Matris %d init hatası: %v", i+1, err)
+			results = append(results, map[string]interface{}{
+				"matrix_index": i,
+				"error":        err.Error(),
+				"xor_count":    0,
+				"depth":        0,
+				"program":      []string{},
+			})
+			continue
+		}
+
+		result, err := sbp.Solve(matrix)
+		if err != nil {
+			log.Printf("[SBP] HATA: Matris %d solve hatası: %v", i+1, err)
+			results = append(results, map[string]interface{}{
+				"matrix_index": i,
+				"error":        err.Error(),
+				"xor_count":    0,
+				"depth":        0,
+				"program":      []string{},
+			})
+			continue
+		}
+
+		log.Printf("[SBP] Matris %d başarıyla işlendi - XOR: %d, Derinlik: %d", i+1, result.XorCount, result.Depth)
+		results = append(results, map[string]interface{}{
+			"matrix_index": i,
+			"xor_count":    result.XorCount,
+			"depth":        result.Depth,
+			"program":      result.Program,
+		})
+	}
+
+	duration := time.Since(startTime)
+	log.Printf("[SBP] İstek tamamlandı - Süre: %v, Sonuç sayısı: %d", duration, len(results))
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"algorithm": "SBP",
+		"results":   results,
+	})
+}
+
+// getMissingAlgorithmsHandler returns the count of matrices with missing algorithm results
+func getMissingAlgorithmsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	missingCount, totalCount, err := db.GetMissingAlgorithmsCount()
+	if err != nil {
+		log.Printf("❌ [API] GetMissingAlgorithmsCount error: %v", err)
+		http.Error(w, "Eksik algoritma sayısı alınamadı: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	response := MissingAlgorithmsResponse{
+		MissingCount: missingCount,
+		TotalCount:   totalCount,
+		Message:      fmt.Sprintf("%d matris için algoritma sonuçları eksik", missingCount),
+	}
 
 	json.NewEncoder(w).Encode(response)
 } 

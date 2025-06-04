@@ -32,6 +32,9 @@ type MatrixRecord struct {
 	PaarProgram         *string   `json:"paar_program,omitempty"`
 	SlpXorCount         *int      `json:"slp_xor_count,omitempty"`
 	SlpProgram          *string   `json:"slp_program,omitempty"`
+	SbpXorCount         *int      `json:"sbp_xor_count,omitempty"`
+	SbpDepth            *int      `json:"sbp_depth,omitempty"`
+	SbpProgram          *string   `json:"sbp_program,omitempty"`
 	SmallestXor         *int      `json:"smallest_xor,omitempty"`
 	MatrixHash          string    `json:"matrix_hash"`
 	InverseMatrixID     *int      `json:"inverse_matrix_id,omitempty"`
@@ -48,12 +51,14 @@ type InversePair struct {
 	OriginalBoyarXor *int      `json:"original_boyar_xor,omitempty"`
 	OriginalPaarXor  *int      `json:"original_paar_xor,omitempty"`
 	OriginalSlpXor   *int      `json:"original_slp_xor,omitempty"`
+	OriginalSbpXor   *int      `json:"original_sbp_xor,omitempty"`
 	InverseID        int       `json:"inverse_id"`
 	InverseTitle     string    `json:"inverse_title"`
 	InverseXor       int       `json:"inverse_xor"`
 	InverseBoyarXor  *int      `json:"inverse_boyar_xor,omitempty"`
 	InversePaarXor   *int      `json:"inverse_paar_xor,omitempty"`
 	InverseSlpXor    *int      `json:"inverse_slp_xor,omitempty"`
+	InverseSbpXor    *int      `json:"inverse_sbp_xor,omitempty"`
 	CombinedXor      int       `json:"combined_xor"`
 	Group            string    `json:"group"`
 	CreatedAt        time.Time `json:"created_at"`
@@ -174,7 +179,7 @@ func (d *Database) SaveMatrix(title string, matrix Matrix, group string) (*Matri
 }
 
 // UpdateMatrixResults updates the algorithm results for a matrix
-func (d *Database) UpdateMatrixResults(id int, boyarResult, paarResult, slpResult *AlgResult) error {
+func (d *Database) UpdateMatrixResults(id int, boyarResult, paarResult, slpResult, sbpResult *AlgResult) error {
 	// Calculate smallest XOR value
 	var smallestXor *int
 	var xorValues []int
@@ -187,6 +192,9 @@ func (d *Database) UpdateMatrixResults(id int, boyarResult, paarResult, slpResul
 	}
 	if slpResult != nil {
 		xorValues = append(xorValues, slpResult.XorCount)
+	}
+	if sbpResult != nil {
+		xorValues = append(xorValues, sbpResult.XorCount)
 	}
 	
 	if len(xorValues) > 0 {
@@ -204,9 +212,10 @@ func (d *Database) UpdateMatrixResults(id int, boyarResult, paarResult, slpResul
 	SET boyar_xor_count = $1, boyar_depth = $2, boyar_program = $3,
 	    paar_xor_count = $4, paar_program = $5,
 	    slp_xor_count = $6, slp_program = $7,
-	    smallest_xor = $8,
+	    sbp_xor_count = $8, sbp_depth = $9, sbp_program = $10,
+	    smallest_xor = $11,
 	    updated_at = CURRENT_TIMESTAMP
-	WHERE id = $9
+	WHERE id = $12
 	`
 
 	var boyarXor, boyarDepth *int
@@ -237,7 +246,99 @@ func (d *Database) UpdateMatrixResults(id int, boyarResult, paarResult, slpResul
 		slpProgram = &programStr
 	}
 
-	_, err := d.db.Exec(query, boyarXor, boyarDepth, boyarProgram, paarXor, paarProgram, slpXor, slpProgram, smallestXor, id)
+	var sbpXor, sbpDepth *int
+	var sbpProgram *string
+	if sbpResult != nil {
+		sbpXor = &sbpResult.XorCount
+		sbpDepth = &sbpResult.Depth
+		programJson, _ := json.Marshal(sbpResult.Program)
+		programStr := string(programJson)
+		sbpProgram = &programStr
+	}
+
+	_, err := d.db.Exec(query, boyarXor, boyarDepth, boyarProgram, paarXor, paarProgram, slpXor, slpProgram, sbpXor, sbpDepth, sbpProgram, smallestXor, id)
+	return err
+}
+
+// UpdateMatrixResultsWithSBP updates the algorithm results for a matrix including SBP
+func (d *Database) UpdateMatrixResultsWithSBP(id int, boyarResult, paarResult, slpResult, sbpResult *AlgResult) error {
+	// Calculate smallest XOR value
+	var smallestXor *int
+	var xorValues []int
+	
+	if boyarResult != nil {
+		xorValues = append(xorValues, boyarResult.XorCount)
+	}
+	if paarResult != nil {
+		xorValues = append(xorValues, paarResult.XorCount)
+	}
+	if slpResult != nil {
+		xorValues = append(xorValues, slpResult.XorCount)
+	}
+	if sbpResult != nil {
+		xorValues = append(xorValues, sbpResult.XorCount)
+	}
+	
+	if len(xorValues) > 0 {
+		min := xorValues[0]
+		for _, val := range xorValues {
+			if val < min {
+				min = val
+			}
+		}
+		smallestXor = &min
+	}
+
+	query := `
+	UPDATE matrix_records 
+	SET boyar_xor_count = $1, boyar_depth = $2, boyar_program = $3,
+	    paar_xor_count = $4, paar_program = $5,
+	    slp_xor_count = $6, slp_program = $7,
+	    sbp_xor_count = $8, sbp_depth = $9, sbp_program = $10,
+	    smallest_xor = $11,
+	    updated_at = CURRENT_TIMESTAMP
+	WHERE id = $12
+	`
+
+	var boyarXor, boyarDepth *int
+	var boyarProgram *string
+	if boyarResult != nil {
+		boyarXor = &boyarResult.XorCount
+		boyarDepth = &boyarResult.Depth
+		programJson, _ := json.Marshal(boyarResult.Program)
+		programStr := string(programJson)
+		boyarProgram = &programStr
+	}
+
+	var paarXor *int
+	var paarProgram *string
+	if paarResult != nil {
+		paarXor = &paarResult.XorCount
+		programJson, _ := json.Marshal(paarResult.Program)
+		programStr := string(programJson)
+		paarProgram = &programStr
+	}
+
+	var slpXor *int
+	var slpProgram *string
+	if slpResult != nil {
+		slpXor = &slpResult.XorCount
+		programJson, _ := json.Marshal(slpResult.Program)
+		programStr := string(programJson)
+		slpProgram = &programStr
+	}
+
+	var sbpXor, sbpDepth *int
+	var sbpProgram *string
+	if sbpResult != nil {
+		sbpXor = &sbpResult.XorCount
+		sbpDepth = &sbpResult.Depth
+		programJson, _ := json.Marshal(sbpResult.Program)
+		programStr := string(programJson)
+		sbpProgram = &programStr
+	}
+
+	_, err := d.db.Exec(query, boyarXor, boyarDepth, boyarProgram, paarXor, paarProgram, slpXor, slpProgram, sbpXor, sbpDepth, sbpProgram, smallestXor, id)
 	return err
 }
 
@@ -247,6 +348,7 @@ func (d *Database) GetMatrixByID(id int) (*MatrixRecord, error) {
 	SELECT id, title, group_name, matrix_binary, matrix_hex, ham_xor_count, smallest_xor,
 	       boyar_xor_count, boyar_depth, boyar_program,
 	       paar_xor_count, paar_program, slp_xor_count, slp_program,
+	       sbp_xor_count, sbp_depth, sbp_program,
 	       matrix_hash, inverse_matrix_id, inverse_matrix_hash, created_at, updated_at
 	FROM matrix_records WHERE id = $1
 	`
@@ -261,6 +363,7 @@ func (d *Database) GetMatrixByHash(hash string) (*MatrixRecord, error) {
 	SELECT id, title, group_name, matrix_binary, matrix_hex, ham_xor_count, smallest_xor,
 	       boyar_xor_count, boyar_depth, boyar_program,
 	       paar_xor_count, paar_program, slp_xor_count, slp_program,
+	       sbp_xor_count, sbp_depth, sbp_program,
 	       matrix_hash, inverse_matrix_id, inverse_matrix_hash, created_at, updated_at
 	FROM matrix_records WHERE matrix_hash = $1
 	`
@@ -362,6 +465,8 @@ func (d *Database) GetMatrices(page, limit int, titleFilter, groupFilter string,
 	       CASE WHEN paar_program IS NOT NULL THEN 'computed' ELSE NULL END as paar_program,
 	       slp_xor_count, 
 	       CASE WHEN slp_program IS NOT NULL THEN 'computed' ELSE NULL END as slp_program,
+	       sbp_xor_count, sbp_depth,
+	       CASE WHEN sbp_program IS NOT NULL THEN 'computed' ELSE NULL END as sbp_program,
 	       matrix_hash, inverse_matrix_id, inverse_matrix_hash, created_at, updated_at
 	FROM matrix_records %s
 	ORDER BY 
@@ -394,8 +499,8 @@ func (d *Database) GetMatrices(page, limit int, titleFilter, groupFilter string,
 func (d *Database) scanMatrixRecord(scanner interface{}) (*MatrixRecord, error) {
 	var record MatrixRecord
 	var groupName sql.NullString
-	var smallestXor, boyarXor, boyarDepth, paarXor, slpXor, inverseMatrixID sql.NullInt64
-	var boyarProgram, paarProgram, slpProgram, inverseMatrixHash sql.NullString
+	var smallestXor, boyarXor, boyarDepth, paarXor, slpXor, sbpXor, sbpDepth, inverseMatrixID sql.NullInt64
+	var boyarProgram, paarProgram, slpProgram, sbpProgram, inverseMatrixHash sql.NullString
 
 	var err error
 	switch s := scanner.(type) {
@@ -403,11 +508,13 @@ func (d *Database) scanMatrixRecord(scanner interface{}) (*MatrixRecord, error) 
 		err = s.Scan(&record.ID, &record.Title, &groupName, &record.MatrixBinary, &record.MatrixHex,
 			&record.HamXorCount, &smallestXor, &boyarXor, &boyarDepth, &boyarProgram,
 			&paarXor, &paarProgram, &slpXor, &slpProgram,
+			&sbpXor, &sbpDepth, &sbpProgram,
 			&record.MatrixHash, &inverseMatrixID, &inverseMatrixHash, &record.CreatedAt, &record.UpdatedAt)
 	case *sql.Rows:
 		err = s.Scan(&record.ID, &record.Title, &groupName, &record.MatrixBinary, &record.MatrixHex,
 			&record.HamXorCount, &smallestXor, &boyarXor, &boyarDepth, &boyarProgram,
 			&paarXor, &paarProgram, &slpXor, &slpProgram,
+			&sbpXor, &sbpDepth, &sbpProgram,
 			&record.MatrixHash, &inverseMatrixID, &inverseMatrixHash, &record.CreatedAt, &record.UpdatedAt)
 	default:
 		return nil, fmt.Errorf("unsupported scanner type")
@@ -449,6 +556,17 @@ func (d *Database) scanMatrixRecord(scanner interface{}) (*MatrixRecord, error) 
 	}
 	if slpProgram.Valid {
 		record.SlpProgram = &slpProgram.String
+	}
+	if sbpXor.Valid {
+		val := int(sbpXor.Int64)
+		record.SbpXorCount = &val
+	}
+	if sbpDepth.Valid {
+		val := int(sbpDepth.Int64)
+		record.SbpDepth = &val
+	}
+	if sbpProgram.Valid {
+		record.SbpProgram = &sbpProgram.String
 	}
 	if inverseMatrixID.Valid {
 		val := int(inverseMatrixID.Int64)
@@ -465,8 +583,8 @@ func (d *Database) scanMatrixRecord(scanner interface{}) (*MatrixRecord, error) 
 func (d *Database) scanMatrixRecordOptimized(scanner interface{}) (*MatrixRecord, error) {
 	var record MatrixRecord
 	var groupName sql.NullString
-	var smallestXor, boyarXor, boyarDepth, paarXor, slpXor, inverseMatrixID sql.NullInt64
-	var boyarProgram, paarProgram, slpProgram, inverseMatrixHash sql.NullString
+	var smallestXor, boyarXor, boyarDepth, paarXor, slpXor, sbpXor, sbpDepth, inverseMatrixID sql.NullInt64
+	var boyarProgram, paarProgram, slpProgram, sbpProgram, inverseMatrixHash sql.NullString
 
 	var err error
 	switch s := scanner.(type) {
@@ -474,11 +592,13 @@ func (d *Database) scanMatrixRecordOptimized(scanner interface{}) (*MatrixRecord
 		err = s.Scan(&record.ID, &record.Title, &groupName, &record.MatrixBinary, &record.MatrixHex,
 			&record.HamXorCount, &smallestXor, &boyarXor, &boyarDepth, &boyarProgram,
 			&paarXor, &paarProgram, &slpXor, &slpProgram,
+			&sbpXor, &sbpDepth, &sbpProgram,
 			&record.MatrixHash, &inverseMatrixID, &inverseMatrixHash, &record.CreatedAt, &record.UpdatedAt)
 	case *sql.Rows:
 		err = s.Scan(&record.ID, &record.Title, &groupName, &record.MatrixBinary, &record.MatrixHex,
 			&record.HamXorCount, &smallestXor, &boyarXor, &boyarDepth, &boyarProgram,
 			&paarXor, &paarProgram, &slpXor, &slpProgram,
+			&sbpXor, &sbpDepth, &sbpProgram,
 			&record.MatrixHash, &inverseMatrixID, &inverseMatrixHash, &record.CreatedAt, &record.UpdatedAt)
 	default:
 		return nil, fmt.Errorf("unsupported scanner type")
@@ -520,6 +640,17 @@ func (d *Database) scanMatrixRecordOptimized(scanner interface{}) (*MatrixRecord
 	}
 	if slpProgram.Valid {
 		record.SlpProgram = &slpProgram.String
+	}
+	if sbpXor.Valid {
+		val := int(sbpXor.Int64)
+		record.SbpXorCount = &val
+	}
+	if sbpDepth.Valid {
+		val := int(sbpDepth.Int64)
+		record.SbpDepth = &val
+	}
+	if sbpProgram.Valid {
+		record.SbpProgram = &sbpProgram.String
 	}
 	if inverseMatrixID.Valid {
 		val := int(inverseMatrixID.Int64)
@@ -853,12 +984,13 @@ func (d *Database) getMatrixHashesFromFile(filePath string) (map[string]bool, er
 // GetMatricesWithoutAlgorithms returns matrices that don't have algorithm results
 func (d *Database) GetMatricesWithoutAlgorithms(limit int) ([]*MatrixRecord, error) {
 	query := `
-	SELECT id, title, matrix_binary, matrix_hex, ham_xor_count, 
+	SELECT id, title, group_name, matrix_binary, matrix_hex, ham_xor_count, smallest_xor,
 	       boyar_xor_count, boyar_depth, boyar_program,
 	       paar_xor_count, paar_program, slp_xor_count, slp_program,
-	       matrix_hash, created_at, updated_at
+	       sbp_xor_count, sbp_depth, sbp_program,
+	       matrix_hash, inverse_matrix_id, inverse_matrix_hash, created_at, updated_at
 	FROM matrix_records 
-	WHERE (boyar_xor_count IS NULL OR paar_xor_count IS NULL OR slp_xor_count IS NULL)
+	WHERE (boyar_xor_count IS NULL OR paar_xor_count IS NULL OR slp_xor_count IS NULL OR sbp_xor_count IS NULL)
 	ORDER BY created_at ASC
 	LIMIT $1
 	`
@@ -949,6 +1081,28 @@ func runSLPHeuristic(matrix [][]string) (*AlgResult, error) {
 	return &result, nil
 }
 
+// runSBPAlgorithm runs the SBP algorithm on a matrix
+func runSBPAlgorithm(matrix [][]string) (*AlgResult, error) {
+	sbp := NewSBPAlgorithm(10) // depth limit
+	
+	err := sbp.ReadTargetMatrix(matrix)
+	if err != nil {
+		return nil, err
+	}
+	
+	err = sbp.InitBase()
+	if err != nil {
+		return nil, err
+	}
+	
+	result, err := sbp.Solve(matrix)
+	if err != nil {
+		return nil, err
+	}
+	
+	return &result, nil
+}
+
 // Worker pool for algorithm calculations
 type AlgorithmWorker struct {
 	jobs    chan AlgorithmJob
@@ -967,6 +1121,7 @@ type AlgorithmResult struct {
 	BoyarResult  *AlgResult
 	PaarResult   *AlgResult
 	SlpResult    *AlgResult
+	SbpResult    *AlgResult
 	Error        error
 }
 
@@ -1021,16 +1176,24 @@ func (w *AlgorithmWorker) worker(id int) {
 				log.Printf("✅ [WORKER-%d] SLP Heuristic tamamlandı - XOR: %d", id, slpResult.XorCount)
 			}
 			
+			sbpResult, sbpErr := runSBPAlgorithm(job.Matrix)
+			if sbpErr != nil {
+				log.Printf("❌ [WORKER-%d] SBP hatası: %v", id, sbpErr)
+			} else {
+				log.Printf("✅ [WORKER-%d] SBP algoritması tamamlandı - XOR: %d", id, sbpResult.XorCount)
+			}
+			
 			// Send result
 			result := AlgorithmResult{
 				MatrixID:    job.MatrixID,
 				BoyarResult: boyarResult,
 				PaarResult:  paarResult,
 				SlpResult:   slpResult,
+				SbpResult:   sbpResult,
 			}
 			
-			if boyarErr != nil || paarErr != nil || slpErr != nil {
-				result.Error = fmt.Errorf("algorithm errors: boyar=%v, paar=%v, slp=%v", boyarErr, paarErr, slpErr)
+			if boyarErr != nil || paarErr != nil || slpErr != nil || sbpErr != nil {
+				result.Error = fmt.Errorf("algorithm errors: boyar=%v, paar=%v, slp=%v, sbp=%v", boyarErr, paarErr, slpErr, sbpErr)
 			}
 			
 			w.results <- result
@@ -1050,7 +1213,7 @@ func (w *AlgorithmWorker) processResults() {
 			continue
 		}
 		
-		err := db.UpdateMatrixResults(result.MatrixID, result.BoyarResult, result.PaarResult, result.SlpResult)
+		err := db.UpdateMatrixResults(result.MatrixID, result.BoyarResult, result.PaarResult, result.SlpResult, result.SbpResult)
 		if err != nil {
 			log.Printf("❌ [RESULT] Matris %d için sonuçlar kaydedilemedi: %v", result.MatrixID, err)
 		} else {
@@ -1097,6 +1260,28 @@ func createTables(database *sql.DB) error {
 			ALTER TABLE matrix_records ADD COLUMN inverse_matrix_hash VARCHAR(32);
 		END IF;
 	END $$;
+
+	-- Add SBP algorithm fields if they don't exist
+	DO $$ 
+	BEGIN 
+		IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='matrix_records' AND column_name='sbp_xor_count') THEN
+			ALTER TABLE matrix_records ADD COLUMN sbp_xor_count INTEGER;
+		END IF;
+	END $$;
+
+	DO $$ 
+	BEGIN 
+		IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='matrix_records' AND column_name='sbp_depth') THEN
+			ALTER TABLE matrix_records ADD COLUMN sbp_depth INTEGER;
+		END IF;
+	END $$;
+
+	DO $$ 
+	BEGIN 
+		IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='matrix_records' AND column_name='sbp_program') THEN
+			ALTER TABLE matrix_records ADD COLUMN sbp_program TEXT;
+		END IF;
+	END $$;
 	`
 
 	_, err := database.Exec(migrationSQL)
@@ -1121,6 +1306,9 @@ func createTables(database *sql.DB) error {
 		paar_program TEXT,
 		slp_xor_count INTEGER,
 		slp_program TEXT,
+		sbp_xor_count INTEGER,
+		sbp_depth INTEGER,
+		sbp_program TEXT,
 		matrix_hash VARCHAR(32) NOT NULL UNIQUE,
 		inverse_matrix_id INTEGER,
 		inverse_matrix_hash VARCHAR(32),
@@ -1171,11 +1359,13 @@ func updateSmallestXorForExistingRecords(database *sql.DB) {
 			SELECT COALESCE(paar_xor_count, 999999) as xor_value
 			UNION ALL
 			SELECT COALESCE(slp_xor_count, 999999) as xor_value
+			UNION ALL
+			SELECT COALESCE(sbp_xor_count, 999999) as xor_value
 		) AS xor_values
 		WHERE xor_value < 999999
 	)
 	WHERE smallest_xor IS NULL 
-	AND (boyar_xor_count IS NOT NULL OR paar_xor_count IS NOT NULL OR slp_xor_count IS NOT NULL)
+	AND (boyar_xor_count IS NOT NULL OR paar_xor_count IS NOT NULL OR slp_xor_count IS NOT NULL OR sbp_xor_count IS NOT NULL)
 	`
 	
 	result, err := database.Exec(query)
@@ -1351,7 +1541,7 @@ func CalculateAndSaveAlgorithm(matrixID int, matrix Matrix, algorithm string) er
 		return fmt.Errorf("veritabanı bağlantısı yok")
 	}
 
-	var boyarResult, paarResult, slpResult *AlgResult
+	var boyarResult, paarResult, slpResult, sbpResult *AlgResult
 
 	switch strings.ToLower(algorithm) {
 	case "boyar":
@@ -1375,11 +1565,18 @@ func CalculateAndSaveAlgorithm(matrixID int, matrix Matrix, algorithm string) er
 		}
 		slpResult = result
 
+	case "sbp":
+		result, err := runSBPAlgorithm(matrix)
+		if err != nil {
+			return fmt.Errorf("sbp algoritması hatası: %v", err)
+		}
+		sbpResult = result
+
 	default:
 		return fmt.Errorf("desteklenmeyen algoritma: %s", algorithm)
 	}
 
-	return db.UpdateMatrixResults(matrixID, boyarResult, paarResult, slpResult)
+	return db.UpdateMatrixResults(matrixID, boyarResult, paarResult, slpResult, sbpResult)
 }
 
 // calculateMatrixInverse calculates the inverse of a binary matrix using Gaussian elimination
@@ -1543,8 +1740,16 @@ func (d *Database) SaveMatrixInverse(originalID int) (*MatrixRecord, error) {
 			log.Printf("✅ [INVERSE-SLP] %s için SLP Heuristic tamamlandı - XOR: %d", inverseTitle, slpResult.XorCount)
 		}
 
+		// Calculate SBP Algorithm
+		sbpResult, err := runSBPAlgorithm(inverse)
+		if err != nil {
+			log.Printf("❌ [INVERSE-SBP] %s için SBP algoritması hesaplanamadı: %v", inverseTitle, err)
+		} else {
+			log.Printf("✅ [INVERSE-SBP] %s için SBP algoritması tamamlandı - XOR: %d", inverseTitle, sbpResult.XorCount)
+		}
+
 		// Update matrix with results
-		err = d.UpdateMatrixResults(inverseRecord.ID, boyarResult, paarResult, slpResult)
+		err = d.UpdateMatrixResults(inverseRecord.ID, boyarResult, paarResult, slpResult, sbpResult)
 		if err != nil {
 			log.Printf("❌ [INVERSE-UPDATE] %s için sonuçlar kaydedilemedi: %v", inverseTitle, err)
 		} else {
@@ -1610,6 +1815,7 @@ func (d *Database) GetMatricesForBulkInverse(maxSmallestXor int, skipExisting bo
 	SELECT id, title, group_name, matrix_binary, matrix_hex, ham_xor_count, smallest_xor,
 	       boyar_xor_count, boyar_depth, boyar_program,
 	       paar_xor_count, paar_program, slp_xor_count, slp_program,
+	       sbp_xor_count, sbp_depth, sbp_program,
 	       matrix_hash, inverse_matrix_id, inverse_matrix_hash, created_at, updated_at
 	FROM matrix_records %s
 	ORDER BY smallest_xor ASC, created_at ASC
@@ -1695,12 +1901,14 @@ func (d *Database) GetInversePairs(page, limit int, groupFilter string, maxCombi
 			o.boyar_xor_count as original_boyar_xor,
 			o.paar_xor_count as original_paar_xor,
 			o.slp_xor_count as original_slp_xor,
+			o.sbp_xor_count as original_sbp_xor,
 			i.id as inverse_id,
 			i.title as inverse_title,
 			COALESCE(i.smallest_xor, i.ham_xor_count) as inverse_xor,
 			i.boyar_xor_count as inverse_boyar_xor,
 			i.paar_xor_count as inverse_paar_xor,
 			i.slp_xor_count as inverse_slp_xor,
+			i.sbp_xor_count as inverse_sbp_xor,
 			(COALESCE(o.smallest_xor, o.ham_xor_count) + COALESCE(i.smallest_xor, i.ham_xor_count)) as combined_xor,
 			COALESCE(o.group_name, '') as group_name,
 			o.created_at,
@@ -1723,8 +1931,8 @@ func (d *Database) GetInversePairs(page, limit int, groupFilter string, maxCombi
 	var pairs []*InversePair
 	for rows.Next() {
 		var pair InversePair
-		var originalBoyarXor, originalPaarXor, originalSlpXor sql.NullInt64
-		var inverseBoyarXor, inversePaarXor, inverseSlpXor sql.NullInt64
+		var originalBoyarXor, originalPaarXor, originalSlpXor, originalSbpXor sql.NullInt64
+		var inverseBoyarXor, inversePaarXor, inverseSlpXor, inverseSbpXor sql.NullInt64
 
 		err := rows.Scan(
 			&pair.OriginalID,
@@ -1733,12 +1941,14 @@ func (d *Database) GetInversePairs(page, limit int, groupFilter string, maxCombi
 			&originalBoyarXor,
 			&originalPaarXor,
 			&originalSlpXor,
+			&originalSbpXor,
 			&pair.InverseID,
 			&pair.InverseTitle,
 			&pair.InverseXor,
 			&inverseBoyarXor,
 			&inversePaarXor,
 			&inverseSlpXor,
+			&inverseSbpXor,
 			&pair.CombinedXor,
 			&pair.Group,
 			&pair.CreatedAt,
@@ -1761,6 +1971,10 @@ func (d *Database) GetInversePairs(page, limit int, groupFilter string, maxCombi
 			val := int(originalSlpXor.Int64)
 			pair.OriginalSlpXor = &val
 		}
+		if originalSbpXor.Valid {
+			val := int(originalSbpXor.Int64)
+			pair.OriginalSbpXor = &val
+		}
 		if inverseBoyarXor.Valid {
 			val := int(inverseBoyarXor.Int64)
 			pair.InverseBoyarXor = &val
@@ -1773,6 +1987,10 @@ func (d *Database) GetInversePairs(page, limit int, groupFilter string, maxCombi
 			val := int(inverseSlpXor.Int64)
 			pair.InverseSlpXor = &val
 		}
+		if inverseSbpXor.Valid {
+			val := int(inverseSbpXor.Int64)
+			pair.InverseSbpXor = &val
+		}
 
 		pairs = append(pairs, &pair)
 	}
@@ -1782,4 +2000,85 @@ func (d *Database) GetInversePairs(page, limit int, groupFilter string, maxCombi
 	}
 
 	return pairs, total, nil
-} 
+}
+
+// UpdateSBPResults updates only SBP results for a matrix
+func (d *Database) UpdateSBPResults(id int, sbpResult *AlgResult) error {
+	if sbpResult == nil {
+		return nil
+	}
+
+	// First get current matrix to calculate new smallest_xor
+	currentMatrix, err := d.GetMatrixByID(id)
+	if err != nil {
+		return err
+	}
+
+	// Calculate new smallest XOR including SBP
+	var xorValues []int
+	if currentMatrix.BoyarXorCount != nil {
+		xorValues = append(xorValues, *currentMatrix.BoyarXorCount)
+	}
+	if currentMatrix.PaarXorCount != nil {
+		xorValues = append(xorValues, *currentMatrix.PaarXorCount)
+	}
+	if currentMatrix.SlpXorCount != nil {
+		xorValues = append(xorValues, *currentMatrix.SlpXorCount)
+	}
+	xorValues = append(xorValues, sbpResult.XorCount)
+
+	var smallestXor *int
+	if len(xorValues) > 0 {
+		min := xorValues[0]
+		for _, val := range xorValues {
+			if val < min {
+				min = val
+			}
+		}
+		smallestXor = &min
+	}
+
+	query := `
+	UPDATE matrix_records 
+	SET sbp_xor_count = $1, sbp_depth = $2, sbp_program = $3,
+	    smallest_xor = $4,
+	    updated_at = CURRENT_TIMESTAMP
+	WHERE id = $5
+	`
+
+	programJson, _ := json.Marshal(sbpResult.Program)
+	programStr := string(programJson)
+
+	_, err = d.db.Exec(query, sbpResult.XorCount, sbpResult.Depth, programStr, smallestXor, id)
+	return err
+}
+
+// GetMissingAlgorithmsCount returns the count of matrices with missing algorithm results
+func (db *Database) GetMissingAlgorithmsCount() (int, int, error) {
+	var missingCount, totalCount int
+
+	// Get total count
+	err := db.db.QueryRow("SELECT COUNT(*) FROM matrix_records").Scan(&totalCount)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to get total count: %v", err)
+	}
+
+	// Get missing count
+	query := `
+		SELECT COUNT(*) 
+		FROM matrix_records 
+		WHERE boyar_xor_count IS NULL 
+		   OR paar_xor_count IS NULL 
+		   OR slp_xor_count IS NULL 
+		   OR sbp_xor_count IS NULL
+	`
+	
+	err = db.db.QueryRow(query).Scan(&missingCount)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to get missing count: %v", err)
+	}
+
+	return missingCount, totalCount, nil
+}
+
+// UpdateSmallestXorValues updates the smallest_xor column for all records

@@ -24,6 +24,7 @@
         .result-boyar { background-color: #e3f2fd; }
         .result-paar { background-color: #f3e5f5; }
         .result-slp { background-color: #e8f5e8; }
+        .result-sbp { background-color: #fff3e0; }
         .loading {
             display: none;
         }
@@ -105,8 +106,34 @@
                                         <button class="btn btn-outline-warning ms-2" onclick="bulkRecalculate()">
                                             <i class="fas fa-calculator me-2"></i>Toplu Hesapla
                                         </button>
+                                        <button class="btn btn-outline-success ms-2" onclick="startAutoBulkCalculation()" id="autoBulkBtn">
+                                            <i class="fas fa-play me-2"></i>Otomatik Toplu Hesaplama
+                                        </button>
                                         <button class="btn btn-outline-secondary ms-2" type="button" data-bs-toggle="collapse" data-bs-target="#filterCollapse">
                                             <i class="fas fa-filter me-2"></i>Filtreler
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Auto Bulk Calculation Status Panel -->
+                                <div class="alert alert-info" id="autoBulkStatus" style="display: none;">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <h6 class="alert-heading mb-1">
+                                                <i class="fas fa-cogs me-2"></i>Otomatik Toplu Hesaplama Durumu
+                                            </h6>
+                                            <div id="autoBulkProgress">
+                                                <div class="progress mb-2" style="height: 20px;">
+                                                    <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                                                         id="autoBulkProgressBar" role="progressbar" style="width: 0%">
+                                                        0%
+                                                    </div>
+                                                </div>
+                                                <small id="autoBulkDetails" class="text-muted">Hazırlanıyor...</small>
+                                            </div>
+                                        </div>
+                                        <button class="btn btn-outline-danger btn-sm" onclick="stopAutoBulkCalculation()">
+                                            <i class="fas fa-stop me-1"></i>Durdur
                                         </button>
                                     </div>
                                 </div>
@@ -160,6 +187,19 @@
                                                         </div>
                                                         <div class="col-6">
                                                             <input type="number" class="form-control form-control-sm" id="slpXorMax" placeholder="Max">
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="row mt-2">
+                                                    <div class="col-md-3">
+                                                        <label class="form-label">SBP XOR Sayısı</label>
+                                                        <div class="row">
+                                                            <div class="col-6">
+                                                                <input type="number" class="form-control form-control-sm" id="sbpXorMin" placeholder="Min">
+                                                            </div>
+                                                            <div class="col-6">
+                                                                <input type="number" class="form-control form-control-sm" id="sbpXorMax" placeholder="Max">
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 </div>

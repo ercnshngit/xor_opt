@@ -12,7 +12,18 @@ let currentFilters = {
     paarXorMin: null,
     paarXorMax: null,
     slpXorMin: null,
-    slpXorMax: null
+    slpXorMax: null,
+    sbpXorMin: null,
+    sbpXorMax: null
+};
+
+// Auto bulk calculation variables
+let autoBulkRunning = false;
+let autoBulkInterval = null;
+let autoBulkStats = {
+    totalMissing: 0,
+    processed: 0,
+    batchSize: 1000
 };
 
 // Inverse Pairs functionality
@@ -26,7 +37,23 @@ let currentSortOrder = 'combined_asc';
 document.addEventListener('DOMContentLoaded', function() {
     // Load URL parameters
     loadFromURL();
-    loadMatrices();
+    
+    // Check which tab is active and load appropriate data
+    const activeTab = document.querySelector('.nav-link.active');
+    if (activeTab) {
+        const targetId = activeTab.getAttribute('data-bs-target');
+        if (targetId === '#matrices') {
+            loadMatrices();
+        } else if (targetId === '#bulk-inverse') {
+            loadBulkInverseStats();
+        } else if (targetId === '#inverse-pairs') {
+            loadInversePairs();
+        }
+    } else {
+        // Default to matrices if no active tab found
+        loadMatrices();
+    }
+    
     setupEventListeners();
     
     // Handle browser back/forward
@@ -70,6 +97,8 @@ function loadFromURL() {
     const paarXorMax = urlParams.get('paarXorMax');
     const slpXorMin = urlParams.get('slpXorMin');
     const slpXorMax = urlParams.get('slpXorMax');
+    const sbpXorMin = urlParams.get('sbpXorMin');
+    const sbpXorMax = urlParams.get('sbpXorMax');
     
     if (hamXorMin) {
         currentFilters.hamXorMin = parseInt(hamXorMin);
@@ -102,6 +131,14 @@ function loadFromURL() {
     if (slpXorMax) {
         currentFilters.slpXorMax = parseInt(slpXorMax);
         document.getElementById('slpXorMax').value = slpXorMax;
+    }
+    if (sbpXorMin) {
+        currentFilters.sbpXorMin = parseInt(sbpXorMin);
+        document.getElementById('sbpXorMin').value = sbpXorMin;
+    }
+    if (sbpXorMax) {
+        currentFilters.sbpXorMax = parseInt(sbpXorMax);
+        document.getElementById('sbpXorMax').value = sbpXorMax;
     }
 }
 
@@ -148,6 +185,12 @@ function updateURL() {
     }
     if (currentFilters.slpXorMax !== null) {
         params.set('slpXorMax', currentFilters.slpXorMax);
+    }
+    if (currentFilters.sbpXorMin !== null) {
+        params.set('sbpXorMin', currentFilters.sbpXorMin);
+    }
+    if (currentFilters.sbpXorMax !== null) {
+        params.set('sbpXorMax', currentFilters.sbpXorMax);
     }
     
     const newURL = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
@@ -246,9 +289,9 @@ function setupEventListeners() {
     }
 
     // Tab change event listeners
-    document.querySelectorAll('a[data-bs-toggle="tab"]').forEach(tab => {
+    document.querySelectorAll('button[data-bs-toggle="tab"]').forEach(tab => {
         tab.addEventListener('shown.bs.tab', function (e) {
-            const targetId = e.target.getAttribute('href').substring(1);
+            const targetId = e.target.getAttribute('data-bs-target').substring(1);
             
             if (targetId === 'matrices') {
                 loadMatrices();
@@ -429,6 +472,14 @@ function displayMatrices(matrices) {
                             <div class="col-4">
                                 <div class="algorithm-result result-slp">
                                     <strong>SLP:</strong> ${matrix.slp_xor_count || 'N/A'}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row mt-1">
+                            <div class="col-4">
+                                <div class="algorithm-result result-sbp">
+                                    <strong>SBP:</strong> ${matrix.sbp_xor_count || 'N/A'}
+                                    ${matrix.sbp_depth ? `(D:${matrix.sbp_depth})` : ''}
                                 </div>
                             </div>
                         </div>
@@ -742,6 +793,13 @@ function displayMatrixDetails(matrix) {
                     ${matrix.slp_program ? `<details><summary>Program</summary><pre>${JSON.stringify(JSON.parse(matrix.slp_program), null, 2)}</pre></details>` : ''}
                 </div>
                 
+                <div class="algorithm-result result-sbp mb-3">
+                    <strong>SBP Algoritması:</strong><br>
+                    XOR: ${matrix.sbp_xor_count || 'Hesaplanmamış'}<br>
+                    Derinlik: ${matrix.sbp_depth || 'N/A'}<br>
+                    ${matrix.sbp_program ? `<details><summary>Program</summary><pre>${JSON.stringify(JSON.parse(matrix.sbp_program), null, 2)}</pre></details>` : ''}
+                </div>
+                
                 <div class="mt-3">
                     <small class="text-muted">
                         <strong>Oluşturulma:</strong> ${formatDate(matrix.created_at)}<br>
@@ -769,7 +827,7 @@ async function recalculateMatrix() {
             },
             body: JSON.stringify({
                 matrix_id: currentMatrixId,
-                algorithms: ['boyar', 'paar', 'slp']
+                algorithms: ['boyar', 'paar', 'slp', 'sbp']
             })
         });
         
@@ -1233,6 +1291,8 @@ function applyFilters() {
     const paarXorMax = document.getElementById('paarXorMax').value;
     const slpXorMin = document.getElementById('slpXorMin').value;
     const slpXorMax = document.getElementById('slpXorMax').value;
+    const sbpXorMin = document.getElementById('sbpXorMin').value;
+    const sbpXorMax = document.getElementById('sbpXorMax').value;
 
     // Update current filters
     currentFilters.hamXorMin = hamXorMin ? parseInt(hamXorMin) : null;
@@ -1243,6 +1303,8 @@ function applyFilters() {
     currentFilters.paarXorMax = paarXorMax ? parseInt(paarXorMax) : null;
     currentFilters.slpXorMin = slpXorMin ? parseInt(slpXorMin) : null;
     currentFilters.slpXorMax = slpXorMax ? parseInt(slpXorMax) : null;
+    currentFilters.sbpXorMin = sbpXorMin ? parseInt(sbpXorMin) : null;
+    currentFilters.sbpXorMax = sbpXorMax ? parseInt(sbpXorMax) : null;
 
     // Reset to first page and reload
     currentPage = 1;
@@ -1266,6 +1328,8 @@ function clearFilters() {
     document.getElementById('paarXorMax').value = '';
     document.getElementById('slpXorMin').value = '';
     document.getElementById('slpXorMax').value = '';
+    document.getElementById('sbpXorMin').value = '';
+    document.getElementById('sbpXorMax').value = '';
 
     // Clear current filters
     currentFilters = {
@@ -1276,7 +1340,9 @@ function clearFilters() {
         paarXorMin: null,
         paarXorMax: null,
         slpXorMin: null,
-        slpXorMax: null
+        slpXorMax: null,
+        sbpXorMin: null,
+        sbpXorMax: null
     };
 
     // Reset to first page and reload
@@ -1299,7 +1365,7 @@ async function bulkRecalculate() {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                algorithms: ['boyar', 'paar', 'slp'],
+                algorithms: ['boyar', 'paar', 'slp', 'sbp'],
                 limit: 100
             })
         });
@@ -1521,6 +1587,7 @@ async function startBulkInverse() {
         });
         
         const data = await response.json();
+        
         
         if (!response.ok) {
             throw new Error(data.message || 'Toplu ters alma başlatılamadı');
@@ -1796,7 +1863,7 @@ function setupPairsPagination(currentPage, totalPages, totalItems) {
     // Previous button
     html += `
         <li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
-            <a class="page-link" href="#" ${currentPage > 1 ? `onclick="changePairPage(${currentPage - 1})"` : ''} aria-label="Previous">
+            <a class="page-link" href="#" ${currentPage > 1 ? `data-page="${currentPage - 1}"` : ''} aria-label="Previous">
                 <span aria-hidden="true">&laquo;</span>
             </a>
         </li>
@@ -1878,4 +1945,176 @@ function showPairsLoading(show) {
         loadingDiv.style.display = 'none';
         containerDiv.style.display = 'block';
     }
+}
+
+function showPairsLoading(show) {
+    const loadingDiv = document.getElementById('pairsLoading');
+    if (loadingDiv) {
+        loadingDiv.style.display = show ? 'block' : 'none';
+    }
+}
+
+// Auto Bulk Calculation Functions
+async function startAutoBulkCalculation() {
+    if (autoBulkRunning) {
+        showAlert('Otomatik toplu hesaplama zaten çalışıyor!', 'warning');
+        return;
+    }
+
+    // Confirm with user
+    if (!confirm('Otomatik toplu hesaplama başlatılsın mı?\n\nBu işlem tüm eksik algoritma sonuçlarını hesaplayacak ve uzun sürebilir.')) {
+        return;
+    }
+
+    autoBulkRunning = true;
+    autoBulkStats.processed = 0;
+    
+    // Update UI
+    document.getElementById('autoBulkBtn').innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Çalışıyor...';
+    document.getElementById('autoBulkBtn').disabled = true;
+    document.getElementById('autoBulkStatus').style.display = 'block';
+    
+    try {
+        // Get initial missing count
+        await updateMissingCount();
+        
+        if (autoBulkStats.totalMissing === 0) {
+            showAlert('Tüm algoritma sonuçları zaten hesaplanmış!', 'success');
+            stopAutoBulkCalculation();
+            return;
+        }
+        
+        updateAutoBulkProgress();
+        
+        // Start the automatic process
+        autoBulkInterval = setInterval(async () => {
+            if (!autoBulkRunning) {
+                clearInterval(autoBulkInterval);
+                return;
+            }
+            
+            try {
+                await processBulkBatch();
+            } catch (error) {
+                console.error('Auto bulk calculation error:', error);
+                showAlert('Otomatik toplu hesaplama sırasında hata oluştu: ' + error.message, 'danger');
+                stopAutoBulkCalculation();
+            }
+        }, 35000); // 35 seconds interval
+        
+        // Process first batch immediately
+        await processBulkBatch();
+        
+    } catch (error) {
+        console.error('Failed to start auto bulk calculation:', error);
+        showAlert('Otomatik toplu hesaplama başlatılamadı: ' + error.message, 'danger');
+        stopAutoBulkCalculation();
+    }
+}
+
+async function processBulkBatch() {
+    if (!autoBulkRunning) return;
+    
+    updateAutoBulkDetails('Batch işlemi başlatılıyor...');
+    
+    try {
+        // Start bulk calculation
+        const response = await fetch('/api/matrices/bulk-recalculate', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                limit: autoBulkStats.batchSize
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        updateAutoBulkDetails(`Batch başlatıldı: ${result.total_count} matris işleniyor...`);
+        
+        // Wait for batch to complete (30 seconds)
+        await new Promise(resolve => setTimeout(resolve, 30000));
+        
+        // Update statistics
+        autoBulkStats.processed += autoBulkStats.batchSize;
+        await updateMissingCount();
+        updateAutoBulkProgress();
+        
+        // Check if we're done
+        if (autoBulkStats.totalMissing === 0) {
+            showAlert('🎉 Otomatik toplu hesaplama tamamlandı! Tüm algoritma sonuçları hesaplandı.', 'success');
+            stopAutoBulkCalculation();
+            loadMatrices(); // Refresh the matrices list
+            return;
+        }
+        
+        // Check if we should take a break (every 10,000 processed)
+        if (autoBulkStats.processed > 0 && autoBulkStats.processed % 10000 === 0) {
+            updateAutoBulkDetails('10.000 matris işlendi, 2 dakika ara veriliyor...');
+            await new Promise(resolve => setTimeout(resolve, 120000)); // 2 minute break
+        }
+        
+        updateAutoBulkDetails(`Sonraki batch için bekleniyor... (Kalan: ${autoBulkStats.totalMissing})`);
+        
+    } catch (error) {
+        console.error('Batch processing error:', error);
+        updateAutoBulkDetails('Hata: ' + error.message);
+        throw error;
+    }
+}
+
+async function updateMissingCount() {
+    try {
+        const response = await fetch('/api/matrices/missing-algorithms');
+        if (!response.ok) {
+            throw new Error('Failed to get missing algorithms count');
+        }
+        
+        const data = await response.json();
+        autoBulkStats.totalMissing = data.missing_count;
+        
+    } catch (error) {
+        console.error('Failed to update missing count:', error);
+        // Keep the current count if we can't update it
+    }
+}
+
+function updateAutoBulkProgress() {
+    const totalEstimated = autoBulkStats.processed + autoBulkStats.totalMissing;
+    const progressPercent = totalEstimated > 0 ? Math.round((autoBulkStats.processed / totalEstimated) * 100) : 0;
+    
+    const progressBar = document.getElementById('autoBulkProgressBar');
+    progressBar.style.width = progressPercent + '%';
+    progressBar.textContent = progressPercent + '%';
+    
+    updateAutoBulkDetails(`İşlenen: ${autoBulkStats.processed.toLocaleString()}, Kalan: ${autoBulkStats.totalMissing.toLocaleString()}`);
+}
+
+function updateAutoBulkDetails(message) {
+    const detailsElement = document.getElementById('autoBulkDetails');
+    if (detailsElement) {
+        detailsElement.textContent = message;
+    }
+}
+
+function stopAutoBulkCalculation() {
+    autoBulkRunning = false;
+    
+    if (autoBulkInterval) {
+        clearInterval(autoBulkInterval);
+        autoBulkInterval = null;
+    }
+    
+    // Reset UI
+    document.getElementById('autoBulkBtn').innerHTML = '<i class="fas fa-play me-2"></i>Otomatik Toplu Hesaplama';
+    document.getElementById('autoBulkBtn').disabled = false;
+    document.getElementById('autoBulkStatus').style.display = 'none';
+    
+    // Reset stats
+    autoBulkStats.processed = 0;
+    autoBulkStats.totalMissing = 0;
 } 

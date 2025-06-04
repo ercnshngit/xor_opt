@@ -793,6 +793,368 @@ func (s *SLPHeuristic) Solve(matrix Matrix) (AlgResult, error) {
 	}, nil
 }
 
+// SBP Algorithm implementation (based on the original SBP code)
+type SBPAlgorithm struct {
+	NumInputs    int
+	DepthLimit   int
+	NumTargets   int
+	ProgramSize  int
+	Target       []uint64
+	Dist         []int
+	NDist        []int
+	Base         []uint64
+	BaseSize     int
+	TargetsFound int
+	Result       []string
+	Depth        []int
+	MaxDepth     int
+	MaxDist      int
+}
+
+func NewSBPAlgorithm(depthLimit int) *SBPAlgorithm {
+	return &SBPAlgorithm{
+		DepthLimit: depthLimit,
+		Target:     make([]uint64, MAX_ARRAY_SIZE),
+		Dist:       make([]int, MAX_ARRAY_SIZE),
+		NDist:      make([]int, MAX_ARRAY_SIZE),
+		Base:       make([]uint64, MAX_ARRAY_SIZE),
+		Result:     make([]string, MAX_ARRAY_SIZE),
+		Depth:      make([]int, MAX_ARRAY_SIZE),
+	}
+}
+
+func (s *SBPAlgorithm) ReadTargetMatrix(matrix Matrix) error {
+	s.NumTargets = len(matrix)
+	if s.NumTargets == 0 {
+		return fmt.Errorf("matris boş")
+	}
+	if s.NumTargets >= MAX_ARRAY_SIZE {
+		return fmt.Errorf("matris çok büyük: %d >= %d", s.NumTargets, MAX_ARRAY_SIZE)
+	}
+	s.NumInputs = len(matrix[0])
+	if s.NumInputs >= MAX_ARRAY_SIZE {
+		return fmt.Errorf("matris genişliği çok büyük: %d >= %d", s.NumInputs, MAX_ARRAY_SIZE)
+	}
+
+	s.MaxDist = 0
+	for i := 0; i < s.NumTargets; i++ {
+		var powerOfTwo uint64 = 1
+		s.Target[i] = 0
+		s.Dist[i] = -1
+
+		for j := 0; j < s.NumInputs; j++ {
+			bit, _ := strconv.Atoi(strings.TrimSpace(matrix[i][j]))
+			if bit == 1 {
+				s.Dist[i]++
+				s.Target[i] = s.Target[i] + powerOfTwo
+			}
+			powerOfTwo = powerOfTwo * 2
+		}
+		if s.Dist[i] > s.MaxDist {
+			s.MaxDist = s.Dist[i]
+		}
+	}
+	return nil
+}
+
+func (s *SBPAlgorithm) InitBase() error {
+	s.TargetsFound = 0
+	s.ProgramSize = 0
+	s.Result = make([]string, MAX_ARRAY_SIZE)
+	s.Base[0] = 1
+	s.Depth[0] = 0
+	s.MaxDepth = 0
+
+	for i := 1; i < s.NumInputs; i++ {
+		if i >= MAX_ARRAY_SIZE {
+			return fmt.Errorf("base array overflow: %d >= %d", i, MAX_ARRAY_SIZE)
+		}
+		s.Base[i] = 2 * s.Base[i-1]
+		s.Depth[i] = 0
+	}
+	s.BaseSize = s.NumInputs
+
+	for i := 0; i < s.NumTargets; i++ {
+		if s.Dist[i] == 0 {
+			s.TargetsFound++
+			for j := 0; j < s.NumInputs; j++ {
+				if s.Base[j] == s.Target[i] {
+					s.Result = append(s.Result, fmt.Sprintf("y%d = x%d", i, j))
+					break
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func (s *SBPAlgorithm) isTarget(x uint64) bool {
+	for i := 0; i < s.NumTargets; i++ {
+		if x == s.Target[i] {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *SBPAlgorithm) isBase(x uint64) bool {
+	if x == 0 {
+		return false
+	}
+	for i := 0; i < s.BaseSize; i++ {
+		if x == s.Base[i] {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *SBPAlgorithm) max(a, b int) int {
+	if s.Depth[a] > s.Depth[b] {
+		return s.Depth[a]
+	}
+	return s.Depth[b]
+}
+
+func (s *SBPAlgorithm) reachable(T uint64, K, S int, L uint64) bool {
+	if (s.BaseSize-S) < K {
+		return false
+	}
+	if L < 1 {
+		return false
+	}
+	if K == 0 {
+		return false
+	}
+	if K == 1 {
+		for i := S; i < s.BaseSize; i++ {
+			if T == s.Base[i] && uint64(math.Pow(2, float64(s.Depth[i]))) <= L {
+				return true
+			}
+		}
+		return false
+	}
+
+	if s.reachable(T^s.Base[S], K-1, S+1, L-uint64(math.Pow(2, float64(s.Depth[S])))) {
+		return true
+	}
+	if s.reachable(T, K, S+1, L) {
+		return true
+	}
+	return false
+}
+
+func (s *SBPAlgorithm) NewDistance(u int, newBase uint64, depthNewBase uint64) int {
+	if s.Target[u] == 0 {
+		return 0
+	}
+	if s.isBase(s.Target[u]) || newBase == s.Target[u] {
+		return 0
+	}
+	if s.reachable(s.Target[u]^newBase, s.Dist[u]-1, 0, uint64(math.Pow(2, float64(s.DepthLimit)))-depthNewBase) {
+		return s.Dist[u] - 1
+	}
+	return s.Dist[u]
+}
+
+func (s *SBPAlgorithm) TotalDistance(newBase uint64, depthNewBase uint64) int {
+	D := 0
+	for i := 0; i < s.NumTargets; i++ {
+		t := s.NewDistance(i, newBase, depthNewBase)
+		s.NDist[i] = t
+		D = D + t
+	}
+	return D
+}
+
+func (s *SBPAlgorithm) EasyMove() bool {
+	t := -1
+	for i := 0; i < s.NumTargets; i++ {
+		if s.Dist[i] == 1 {
+			t = i
+			break
+		}
+	}
+	if t == -1 {
+		return false
+	}
+
+	// Array sınır kontrolü
+	if s.BaseSize >= MAX_ARRAY_SIZE-1 {
+		return false
+	}
+
+	newBase := s.Target[t]
+	s.Base[s.BaseSize] = newBase
+	s.BaseSize++
+
+	depthNewBase := uint64(math.Pow(2, float64(s.DepthLimit)))
+	for i := 0; i < s.BaseSize; i++ {
+		for j := i + 1; j < s.BaseSize; j++ {
+			if (s.Base[i]^s.Base[j]) == s.Base[s.BaseSize-1] {
+				newDepth := uint64(math.Pow(2, float64(s.max(i, j)+1)))
+				if depthNewBase > newDepth {
+					depthNewBase = newDepth
+				}
+			}
+		}
+	}
+
+	for u := 0; u < s.NumTargets; u++ {
+		s.Dist[u] = s.NewDistance(u, newBase, depthNewBase)
+	}
+	s.ProgramSize++
+	s.TargetsFound++
+
+	// Find which bases created this target
+	for i := 0; i < s.BaseSize; i++ {
+		for j := i + 1; j < s.BaseSize; j++ {
+			if (s.Base[i]^s.Base[j]) == s.Base[s.BaseSize-1] {
+				s.Depth[s.BaseSize-1] = s.max(i, j) + 1
+				if s.Depth[s.BaseSize-1] > s.MaxDepth {
+					s.MaxDepth = s.Depth[s.BaseSize-1]
+				}
+				var iStr, jStr string
+				if i < s.NumInputs {
+					iStr = fmt.Sprintf("x%d", i)
+				} else {
+					iStr = fmt.Sprintf("t%d", i-s.NumInputs+1)
+				}
+				if j < s.NumInputs {
+					jStr = fmt.Sprintf("x%d", j)
+				} else {
+					jStr = fmt.Sprintf("t%d", j-s.NumInputs+1)
+				}
+				s.Result = append(s.Result, fmt.Sprintf("t%d = %s + %s * y%d (%d)", s.ProgramSize, iStr, jStr, t, s.Depth[s.BaseSize-1]))
+				return true
+			}
+		}
+	}
+	return true
+}
+
+func (s *SBPAlgorithm) PickNewBaseElement() bool {
+	// Array sınır kontrolü
+	if s.BaseSize >= MAX_ARRAY_SIZE-1 {
+		return false
+	}
+
+	minDistance := s.BaseSize * s.NumTargets
+	oldNorm := 0
+	var bestI, bestJ int
+	var theBest uint64
+	bestDist := make([]int, s.NumTargets)
+
+	for i := 0; i < s.BaseSize-1; i++ {
+		if s.Depth[i]+1 >= s.DepthLimit {
+			continue
+		}
+		for j := i + 1; j < s.BaseSize; j++ {
+			if s.Depth[j]+1 >= s.DepthLimit {
+				continue
+			}
+			newBase := s.Base[i] ^ s.Base[j]
+			if newBase == 0 || s.isBase(newBase) {
+				continue
+			}
+
+			depthNewBase := uint64(math.Pow(2, float64(s.max(i, j)+1)))
+			thisDist := s.TotalDistance(newBase, depthNewBase)
+
+			if thisDist <= minDistance {
+				thisNorm := 0
+				for k := 0; k < s.NumTargets; k++ {
+					d := s.NDist[k]
+					thisNorm = thisNorm + d*d
+				}
+
+				if thisDist < minDistance || thisNorm > oldNorm {
+					bestI = i
+					bestJ = j
+					theBest = newBase
+					copy(bestDist, s.NDist[:s.NumTargets])
+					minDistance = thisDist
+					oldNorm = thisNorm
+				}
+			}
+		}
+	}
+
+	for i := 0; i < s.NumTargets; i++ {
+		s.Dist[i] = bestDist[i]
+	}
+
+	s.Base[s.BaseSize] = theBest
+	s.Depth[s.BaseSize] = s.max(bestI, bestJ) + 1
+	if s.Depth[s.BaseSize] > s.MaxDepth {
+		s.MaxDepth = s.Depth[s.BaseSize]
+	}
+	s.BaseSize++
+	s.ProgramSize++
+
+	var iStr, jStr string
+	if bestI < s.NumInputs {
+		iStr = fmt.Sprintf("x%d", bestI)
+	} else {
+		iStr = fmt.Sprintf("t%d", bestI-s.NumInputs+1)
+	}
+	if bestJ < s.NumInputs {
+		jStr = fmt.Sprintf("x%d", bestJ)
+	} else {
+		jStr = fmt.Sprintf("t%d", bestJ-s.NumInputs+1)
+	}
+	s.Result = append(s.Result, fmt.Sprintf("t%d = %s + %s (%d)", s.ProgramSize, iStr, jStr, s.Depth[s.BaseSize-1]))
+
+	if s.isTarget(theBest) {
+		s.TargetsFound++
+	}
+	return true
+}
+
+func (s *SBPAlgorithm) Solve(matrix Matrix) (AlgResult, error) {
+	err := s.ReadTargetMatrix(matrix)
+	if err != nil {
+		return AlgResult{}, err
+	}
+	
+	// Check if depth limit is exceeded
+	if s.MaxDist+1 > int(math.Pow(2, float64(s.DepthLimit))) {
+		return AlgResult{}, fmt.Errorf("depth limit exceeded")
+	}
+	
+	err = s.InitBase()
+	if err != nil {
+		return AlgResult{}, err
+	}
+
+	iterations := 0
+	threshold := 1000 // SBP threshold
+	for s.TargetsFound < s.NumTargets && iterations < MAX_ITERATIONS {
+		if s.ProgramSize > threshold {
+			break
+		}
+		if !s.EasyMove() {
+			if !s.PickNewBaseElement() {
+				break // Array sınırına ulaşıldı
+			}
+		}
+		iterations++
+	}
+
+	var program []string
+	for _, res := range s.Result {
+		if res != "" {
+			program = append(program, res)
+		}
+	}
+
+	return AlgResult{
+		XorCount: s.ProgramSize,
+		Program:  program,
+		Depth:    s.MaxDepth,
+	}, nil
+}
+
 // API Handlers
 func boyarHandler(w http.ResponseWriter, r *http.Request) {
 	startTime := time.Now()
@@ -1103,7 +1465,7 @@ func slpHandler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[SLP] İstek tamamlandı - Süre: %v, Sonuç sayısı: %d", duration, len(results))
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"algorithm": "SLP_Heuristic",
+		"algorithm": "SLP",
 		"results":   results,
 	})
 }
@@ -1160,6 +1522,7 @@ func main() {
 	r.HandleFunc("/boyar", boyarHandler).Methods("POST", "OPTIONS")
 	r.HandleFunc("/paar", paarHandler).Methods("POST", "OPTIONS")
 	r.HandleFunc("/slp", slpHandler).Methods("POST", "OPTIONS")
+	r.HandleFunc("/sbp", sbpHandler).Methods("POST", "OPTIONS")
 
 	// New database API endpoints
 	r.HandleFunc("/api/matrices", getMatricesHandler).Methods("GET")
@@ -1170,6 +1533,7 @@ func main() {
 	r.HandleFunc("/api/matrices/recalculate", recalculateHandler).Methods("POST")
 	r.HandleFunc("/api/matrices/bulk-recalculate", bulkRecalculateHandler).Methods("POST")
 	r.HandleFunc("/api/matrices/bulk-inverse", bulkInverseHandler).Methods("POST")
+	r.HandleFunc("/api/matrices/missing-algorithms", getMissingAlgorithmsHandler).Methods("GET")
 	r.HandleFunc("/api/inverse-pairs", getInversePairsHandler).Methods("GET")
 
 	// Config API endpoints
@@ -1203,6 +1567,7 @@ func main() {
 	log.Printf("  POST /boyar - BoyarSLP algorithm")
 	log.Printf("  POST /paar  - Paar algorithm")
 	log.Printf("  POST /slp   - SLP Heuristic algorithm")
+	log.Printf("  POST /sbp   - SBP algorithm")
 	log.Printf("  GET  /api/matrices - Get matrices with pagination")
 	log.Printf("  POST /api/matrices - Save matrix")
 	log.Printf("  GET  /api/matrices/{id} - Get matrix by ID")
@@ -1210,6 +1575,7 @@ func main() {
 	log.Printf("  POST /api/matrices/recalculate - Recalculate algorithms")
 	log.Printf("  POST /api/matrices/bulk-recalculate - Bulk recalculate algorithms")
 	log.Printf("  POST /api/matrices/bulk-inverse - Bulk inverse")
+	log.Printf("  GET  /api/matrices/missing-algorithms - Get missing algorithms")
 	log.Printf("  GET  /api/inverse-pairs - Get inverse matrix pairs")
 	log.Printf("  GET  /api/config - Get current configuration")
 	log.Printf("  POST /api/config/import - Trigger manual import")
