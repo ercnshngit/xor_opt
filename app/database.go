@@ -2082,3 +2082,106 @@ func (db *Database) GetMissingAlgorithmsCount() (int, int, error) {
 }
 
 // UpdateSmallestXorValues updates the smallest_xor column for all records
+
+// UpdateMatrixResultsPartial updates only the provided algorithm results, keeping existing ones intact
+func (d *Database) UpdateMatrixResultsPartial(id int, boyarResult, paarResult, slpResult, sbpResult *AlgResult) error {
+	// First get current values
+	current, err := d.GetMatrixByID(id)
+	if err != nil {
+		return err
+	}
+
+	// Use current values if new ones are not provided
+	var boyarXor, boyarDepth *int
+	var boyarProgram *string
+	if boyarResult != nil {
+		boyarXor = &boyarResult.XorCount
+		boyarDepth = &boyarResult.Depth
+		programJson, _ := json.Marshal(boyarResult.Program)
+		programStr := string(programJson)
+		boyarProgram = &programStr
+	} else {
+		boyarXor = current.BoyarXorCount
+		boyarDepth = current.BoyarDepth
+		boyarProgram = current.BoyarProgram
+	}
+
+	var paarXor *int
+	var paarProgram *string
+	if paarResult != nil {
+		paarXor = &paarResult.XorCount
+		programJson, _ := json.Marshal(paarResult.Program)
+		programStr := string(programJson)
+		paarProgram = &programStr
+	} else {
+		paarXor = current.PaarXorCount
+		paarProgram = current.PaarProgram
+	}
+
+	var slpXor *int
+	var slpProgram *string
+	if slpResult != nil {
+		slpXor = &slpResult.XorCount
+		programJson, _ := json.Marshal(slpResult.Program)
+		programStr := string(programJson)
+		slpProgram = &programStr
+	} else {
+		slpXor = current.SlpXorCount
+		slpProgram = current.SlpProgram
+	}
+
+	var sbpXor, sbpDepth *int
+	var sbpProgram *string
+	if sbpResult != nil {
+		sbpXor = &sbpResult.XorCount
+		sbpDepth = &sbpResult.Depth
+		programJson, _ := json.Marshal(sbpResult.Program)
+		programStr := string(programJson)
+		sbpProgram = &programStr
+	} else {
+		sbpXor = current.SbpXorCount
+		sbpDepth = current.SbpDepth
+		sbpProgram = current.SbpProgram
+	}
+
+	// Calculate smallest XOR value from all available results
+	var smallestXor *int
+	var xorValues []int
+	
+	if boyarXor != nil {
+		xorValues = append(xorValues, *boyarXor)
+	}
+	if paarXor != nil {
+		xorValues = append(xorValues, *paarXor)
+	}
+	if slpXor != nil {
+		xorValues = append(xorValues, *slpXor)
+	}
+	if sbpXor != nil {
+		xorValues = append(xorValues, *sbpXor)
+	}
+	
+	if len(xorValues) > 0 {
+		min := xorValues[0]
+		for _, val := range xorValues {
+			if val < min {
+				min = val
+			}
+		}
+		smallestXor = &min
+	}
+
+	query := `
+	UPDATE matrix_records 
+	SET boyar_xor_count = $1, boyar_depth = $2, boyar_program = $3,
+	    paar_xor_count = $4, paar_program = $5,
+	    slp_xor_count = $6, slp_program = $7,
+	    sbp_xor_count = $8, sbp_depth = $9, sbp_program = $10,
+	    smallest_xor = $11,
+	    updated_at = CURRENT_TIMESTAMP
+	WHERE id = $12
+	`
+
+	_, err = d.db.Exec(query, boyarXor, boyarDepth, boyarProgram, paarXor, paarProgram, slpXor, slpProgram, sbpXor, sbpDepth, sbpProgram, smallestXor, id)
+	return err
+}

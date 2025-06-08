@@ -1700,7 +1700,7 @@ func startAutoBulkCalculation() {
 				}
 
 				// Update database with results (only the calculated ones)
-				err = db.UpdateMatrixResultsWithSBP(matrix.ID, boyarResult, paarResult, slpResult, sbpResult)
+				err = db.UpdateMatrixResultsPartial(matrix.ID, boyarResult, paarResult, slpResult, sbpResult)
 				if err != nil {
 					log.Printf("❌ Algoritma sonuçları güncellenemedi (ID %d): %v", matrix.ID, err)
 				} else {
