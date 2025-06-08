@@ -1497,6 +1497,9 @@ func main() {
 		}
 	}
 
+	// Start automatic bulk calculation
+	startAutoBulkCalculation()
+
 	// Create router
 	r := mux.NewRouter()
 
@@ -1585,4 +1588,135 @@ func main() {
 	if err := http.ListenAndServe(port, handler); err != nil {
 		log.Fatal("Server başlatılamadı:", err)
 	}
+}
+
+// startAutoBulkCalculation automatically calculates algorithms for matrices without results
+func startAutoBulkCalculation() {
+	log.Println("🔄 Otomatik toplu hesaplama başlatılıyor...")
+	
+	batchSize := 10 // Batch boyutu
+	totalProcessed := 0
+	
+	// Process matrices in background
+	go func() {
+		for {
+			// Get next batch of matrices without algorithm results
+			matrices, err := db.GetMatricesWithoutAlgorithms(batchSize)
+			if err != nil {
+				log.Printf("❌ Hesaplanmamış matrisler alınamadı: %v", err)
+				break
+			}
+
+			if len(matrices) == 0 {
+				if totalProcessed == 0 {
+					log.Println("✅ Tüm matrisler zaten hesaplanmış")
+				} else {
+					log.Printf("🎉 Otomatik toplu hesaplama tamamlandı: Toplam %d matris işlendi", totalProcessed)
+				}
+				break
+			}
+
+			log.Printf("📊 Batch: %d matris bulundu, işleniyor...", len(matrices))
+			
+			for i, matrix := range matrices {
+				log.Printf("🔄 Batch işlemi: Matris %d/%d (ID: %d) kontrol ediliyor...", i+1, len(matrices), matrix.ID)
+				
+				// Parse matrix from binary string
+				matrixData, err := parseMatrixFromBinary(matrix.MatrixBinary)
+				if err != nil {
+					log.Printf("❌ Matris parse hatası (ID %d): %v", matrix.ID, err)
+					continue
+				}
+
+				// Recalculate Ham XOR if needed
+				newHamXor := calculateHammingXOR(matrixData)
+				if newHamXor != matrix.HamXorCount {
+					_, err = db.db.Exec("UPDATE matrix_records SET ham_xor_count = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2", newHamXor, matrix.ID)
+					if err != nil {
+						log.Printf("❌ Ham XOR güncellenemedi (ID %d): %v", matrix.ID, err)
+					}
+				}
+
+				var boyarResult, paarResult, slpResult, sbpResult *AlgResult
+				algorithmsToRun := []string{}
+
+				// Check which algorithms are missing
+				if matrix.BoyarXorCount == nil {
+					algorithmsToRun = append(algorithmsToRun, "boyar")
+				}
+				if matrix.PaarXorCount == nil {
+					algorithmsToRun = append(algorithmsToRun, "paar")
+				}
+				if matrix.SlpXorCount == nil {
+					algorithmsToRun = append(algorithmsToRun, "slp")
+				}
+				if matrix.SbpXorCount == nil {
+					algorithmsToRun = append(algorithmsToRun, "sbp")
+				}
+
+				if len(algorithmsToRun) == 0 {
+					log.Printf("✅ Matris %d zaten tam hesaplanmış, atlanıyor", matrix.ID)
+					continue
+				}
+
+				log.Printf("🔄 Matris %d için eksik algoritmalar: %v", matrix.ID, algorithmsToRun)
+
+				// Run only missing algorithms
+				for _, algorithm := range algorithmsToRun {
+					switch strings.ToLower(algorithm) {
+					case "boyar":
+						boyar := NewBoyarSLP(10)
+						if result, err := boyar.Solve(matrixData); err == nil {
+							boyarResult = &result
+							log.Printf("✅ Boyar tamamlandı (ID %d): XOR=%d", matrix.ID, result.XorCount)
+						} else {
+							log.Printf("❌ Boyar algoritması hatası (ID %d): %v", matrix.ID, err)
+						}
+					case "paar":
+						paar := NewPaarAlgorithm()
+						if result, err := paar.Solve(matrixData); err == nil {
+							paarResult = &result
+							log.Printf("✅ Paar tamamlandı (ID %d): XOR=%d", matrix.ID, result.XorCount)
+						} else {
+							log.Printf("❌ Paar algoritması hatası (ID %d): %v", matrix.ID, err)
+						}
+					case "slp":
+						slp := NewSLPHeuristic()
+						if result, err := slp.Solve(matrixData); err == nil {
+							slpResult = &result
+							log.Printf("✅ SLP tamamlandı (ID %d): XOR=%d", matrix.ID, result.XorCount)
+						} else {
+							log.Printf("❌ SLP algoritması hatası (ID %d): %v", matrix.ID, err)
+						}
+					case "sbp":
+						sbp := NewSBPAlgorithm(10)
+						if result, err := sbp.Solve(matrixData); err == nil {
+							sbpResult = &result
+							log.Printf("✅ SBP tamamlandı (ID %d): XOR=%d", matrix.ID, result.XorCount)
+						} else {
+							log.Printf("❌ SBP algoritması hatası (ID %d): %v", matrix.ID, err)
+						}
+					}
+				}
+
+				// Update database with results (only the calculated ones)
+				err = db.UpdateMatrixResultsWithSBP(matrix.ID, boyarResult, paarResult, slpResult, sbpResult)
+				if err != nil {
+					log.Printf("❌ Algoritma sonuçları güncellenemedi (ID %d): %v", matrix.ID, err)
+				} else {
+					log.Printf("✅ Matris %d eksik algoritmaları tamamlandı", matrix.ID)
+				}
+				
+				totalProcessed++
+			}
+			
+			log.Printf("📊 Batch tamamlandı (%d matris), yeni batch kontrol ediliyor...", len(matrices))
+			
+			// If we got less than batchSize, we're probably done
+			if len(matrices) < batchSize {
+				log.Printf("🎉 Otomatik toplu hesaplama tamamlandı: Toplam %d matris işlendi", totalProcessed)
+				break
+			}
+		}
+	}()
 }
