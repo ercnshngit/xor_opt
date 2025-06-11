@@ -991,7 +991,7 @@ func (d *Database) GetMatricesWithoutAlgorithms(limit int) ([]*MatrixRecord, err
 	       matrix_hash, inverse_matrix_id, inverse_matrix_hash, created_at, updated_at
 	FROM matrix_records 
 	WHERE (boyar_xor_count IS NULL OR paar_xor_count IS NULL OR slp_xor_count IS NULL OR sbp_xor_count IS NULL)
-	ORDER BY created_at ASC
+	ORDER BY created_at DESC
 	LIMIT $1
 	`
 	
