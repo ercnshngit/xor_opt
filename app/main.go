@@ -1594,7 +1594,7 @@ func main() {
 func startAutoBulkCalculation() {
 	log.Println("🔄 Otomatik toplu hesaplama başlatılıyor...")
 	
-	batchSize := 10 // Batch boyutu
+	batchSize := 100 // Batch boyutu
 	totalProcessed := 0
 	
 	// Process matrices in background
