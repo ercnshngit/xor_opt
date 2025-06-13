@@ -1,6 +1,6 @@
 # XOR Optimizasyon - Matris Yönetimi Sistemi
 
-Bu proje, binary matrislerin XOR optimizasyonu için çeşitli algoritmaları (Boyar SLP, Paar, SLP Heuristic) çalıştıran ve sonuçları SQLite veritabanında saklayan bir web uygulamasıdır.
+Bu proje, binary matrislerin XOR optimizasyonu için çeşitli algoritmaları (Boyar SLP, Paar, SLP Heuristic) çalıştıran ve sonuçları Mysql veritabanında saklayan bir web uygulamasıdır.
 
 ## Özellikler
 
