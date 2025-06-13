@@ -286,45 +286,68 @@ func recalculateHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Run algorithms in background
 	go func() {
-		log.Printf("Matris %d için algoritma hesaplama başlatıldı", req.MatrixID)
+		startTime := time.Now()
+		log.Printf("🚀 [RECALCULATE] Matris %d için algoritma hesaplama başlatıldı", req.MatrixID)
 
 		var boyarResult, paarResult, slpResult, sbpResult *AlgResult
 
 		// Run requested algorithms
 		for _, algorithm := range req.Algorithms {
+			algorithmStartTime := time.Now()
 			switch strings.ToLower(algorithm) {
 			case "boyar":
+				log.Printf("⏳ [BOYAR] Matris %d için Boyar algoritması başlatıldı", req.MatrixID)
 				boyar := NewBoyarSLP(10)
 				if result, err := boyar.Solve(matrix); err == nil {
 					boyarResult = &result
+					duration := time.Since(algorithmStartTime)
+					log.Printf("✅ [BOYAR] Matris %d - Boyar algoritması tamamlandı: %.2f saniye (XOR count: %d)", 
+						req.MatrixID, duration.Seconds(), result.XorCount)
 				} else {
-					log.Printf("Boyar algoritması hatası (ID %d): %v", req.MatrixID, err)
+					duration := time.Since(algorithmStartTime)
+					log.Printf("❌ [BOYAR] Matris %d - Boyar algoritması hatası (%.2f saniye): %v", req.MatrixID, duration.Seconds(), err)
 				}
 			case "paar":
+				log.Printf("⏳ [PAAR] Matris %d için Paar algoritması başlatıldı", req.MatrixID)
 				paar := NewPaarAlgorithm()
 				if result, err := paar.Solve(matrix); err == nil {
 					paarResult = &result
+					duration := time.Since(algorithmStartTime)
+					log.Printf("✅ [PAAR] Matris %d - Paar algoritması tamamlandı: %.2f saniye (XOR count: %d)", 
+						req.MatrixID, duration.Seconds(), result.XorCount)
 				} else {
-					log.Printf("Paar algoritması hatası (ID %d): %v", req.MatrixID, err)
+					duration := time.Since(algorithmStartTime)
+					log.Printf("❌ [PAAR] Matris %d - Paar algoritması hatası (%.2f saniye): %v", req.MatrixID, duration.Seconds(), err)
 				}
 			case "slp":
+				log.Printf("⏳ [SLP] Matris %d için SLP algoritması başlatıldı", req.MatrixID)
 				slp := NewSLPHeuristic()
 				if result, err := slp.Solve(matrix); err == nil {
 					slpResult = &result
+					duration := time.Since(algorithmStartTime)
+					log.Printf("✅ [SLP] Matris %d - SLP algoritması tamamlandı: %.2f saniye (XOR count: %d)", 
+						req.MatrixID, duration.Seconds(), result.XorCount)
 				} else {
-					log.Printf("SLP algoritması hatası (ID %d): %v", req.MatrixID, err)
+					duration := time.Since(algorithmStartTime)
+					log.Printf("❌ [SLP] Matris %d - SLP algoritması hatası (%.2f saniye): %v", req.MatrixID, duration.Seconds(), err)
 				}
 			case "sbp":
+				log.Printf("⏳ [SBP] Matris %d için SBP algoritması başlatıldı", req.MatrixID)
 				sbp := NewSBPAlgorithm(10)
 				if result, err := sbp.Solve(matrix); err == nil {
 					sbpResult = &result
+					duration := time.Since(algorithmStartTime)
+					log.Printf("✅ [SBP] Matris %d - SBP algoritması tamamlandı: %.2f saniye (XOR count: %d)", 
+						req.MatrixID, duration.Seconds(), result.XorCount)
 				} else {
-					log.Printf("SBP algoritması hatası (ID %d): %v", req.MatrixID, err)
+					duration := time.Since(algorithmStartTime)
+					log.Printf("❌ [SBP] Matris %d - SBP algoritması hatası (%.2f saniye): %v", req.MatrixID, duration.Seconds(), err)
 				}
 			}
 		}
 
 		// Update database with results
+		dbUpdateStartTime := time.Now()
 		if len(req.Algorithms) == 1 && strings.ToLower(req.Algorithms[0]) == "sbp" && sbpResult != nil {
 			// Only SBP requested, use specific SBP update function
 			err = db.UpdateSBPResults(req.MatrixID, sbpResult)
@@ -332,10 +355,15 @@ func recalculateHandler(w http.ResponseWriter, r *http.Request) {
 			// Multiple algorithms or non-SBP, use full update function
 			err = db.UpdateMatrixResultsWithSBP(req.MatrixID, boyarResult, paarResult, slpResult, sbpResult)
 		}
+		dbUpdateDuration := time.Since(dbUpdateStartTime)
+		totalDuration := time.Since(startTime)
+		
 		if err != nil {
-			log.Printf("Algoritma sonuçları güncellenemedi (ID %d): %v", req.MatrixID, err)
+			log.Printf("❌ [RECALCULATE] Matris %d - Algoritma sonuçları güncellenemedi (DB güncelleme: %.2f saniye, Toplam: %.2f saniye): %v", 
+				req.MatrixID, dbUpdateDuration.Seconds(), totalDuration.Seconds(), err)
 		} else {
-			log.Printf("Matris %d algoritmaları tamamlandı", req.MatrixID)
+			log.Printf("🎉 [RECALCULATE] Matris %d algoritmaları tamamlandı! (DB güncelleme: %.2f saniye, Toplam: %.2f saniye)", 
+				req.MatrixID, dbUpdateDuration.Seconds(), totalDuration.Seconds())
 		}
 	}()
 
@@ -459,70 +487,108 @@ func bulkRecalculateHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Process matrices in background
 	go func() {
+		bulkStartTime := time.Now()
+		log.Printf("🚀 [BULK-RECALCULATE] Toplu hesaplama başlatıldı - %d matris işlenecek", len(matrices))
+		
 		for i, matrix := range matrices {
-			log.Printf("Toplu hesaplama: Matris %d/%d (ID: %d) işleniyor...", i+1, len(matrices), matrix.ID)
+			matrixStartTime := time.Now()
+			log.Printf("⏳ [BULK-RECALCULATE] Matris %d/%d (ID: %d) işleniyor: %s", i+1, len(matrices), matrix.ID, matrix.Title)
 			
 			// Parse matrix from binary string
 			matrixData, err := parseMatrixFromBinary(matrix.MatrixBinary)
 			if err != nil {
-				log.Printf("Matris parse hatası (ID %d): %v", matrix.ID, err)
+				log.Printf("❌ [BULK-RECALCULATE] Matris parse hatası (ID %d): %v", matrix.ID, err)
 				continue
 			}
 
 			// Recalculate Ham XOR
+			hamXorStartTime := time.Now()
 			newHamXor := calculateHammingXOR(matrixData)
+			hamXorDuration := time.Since(hamXorStartTime)
 			
 			// Update Ham XOR in database
 			_, err = db.db.Exec("UPDATE matrix_records SET ham_xor_count = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2", newHamXor, matrix.ID)
 			if err != nil {
-				log.Printf("Ham XOR güncellenemedi (ID %d): %v", matrix.ID, err)
+				log.Printf("❌ [BULK-RECALCULATE] Ham XOR güncellenemedi (ID %d): %v", matrix.ID, err)
+			} else {
+				log.Printf("✅ [HAM-XOR] Matris %d - Ham XOR hesaplandı: %.3f saniye (Değer: %d)", 
+					matrix.ID, hamXorDuration.Seconds(), newHamXor)
 			}
 
 			var boyarResult, paarResult, slpResult, sbpResult *AlgResult
 
 			// Run requested algorithms
 			for _, algorithm := range req.Algorithms {
+				algorithmStartTime := time.Now()
 				switch strings.ToLower(algorithm) {
 				case "boyar":
+					log.Printf("⏳ [BOYAR] Matris %d için Boyar algoritması başlatıldı", matrix.ID)
 					boyar := NewBoyarSLP(10)
 					if result, err := boyar.Solve(matrixData); err == nil {
 						boyarResult = &result
+						duration := time.Since(algorithmStartTime)
+						log.Printf("✅ [BOYAR] Matris %d - Boyar algoritması tamamlandı: %.2f saniye (XOR count: %d)", 
+							matrix.ID, duration.Seconds(), result.XorCount)
 					} else {
-						log.Printf("Boyar algoritması hatası (ID %d): %v", matrix.ID, err)
+						duration := time.Since(algorithmStartTime)
+						log.Printf("❌ [BOYAR] Matris %d - Boyar algoritması hatası (%.2f saniye): %v", matrix.ID, duration.Seconds(), err)
 					}
 				case "paar":
+					log.Printf("⏳ [PAAR] Matris %d için Paar algoritması başlatıldı", matrix.ID)
 					paar := NewPaarAlgorithm()
 					if result, err := paar.Solve(matrixData); err == nil {
 						paarResult = &result
+						duration := time.Since(algorithmStartTime)
+						log.Printf("✅ [PAAR] Matris %d - Paar algoritması tamamlandı: %.2f saniye (XOR count: %d)", 
+							matrix.ID, duration.Seconds(), result.XorCount)
 					} else {
-						log.Printf("Paar algoritması hatası (ID %d): %v", matrix.ID, err)
+						duration := time.Since(algorithmStartTime)
+						log.Printf("❌ [PAAR] Matris %d - Paar algoritması hatası (%.2f saniye): %v", matrix.ID, duration.Seconds(), err)
 					}
 				case "slp":
+					log.Printf("⏳ [SLP] Matris %d için SLP algoritması başlatıldı", matrix.ID)
 					slp := NewSLPHeuristic()
 					if result, err := slp.Solve(matrixData); err == nil {
 						slpResult = &result
+						duration := time.Since(algorithmStartTime)
+						log.Printf("✅ [SLP] Matris %d - SLP algoritması tamamlandı: %.2f saniye (XOR count: %d)", 
+							matrix.ID, duration.Seconds(), result.XorCount)
 					} else {
-						log.Printf("SLP algoritması hatası (ID %d): %v", matrix.ID, err)
+						duration := time.Since(algorithmStartTime)
+						log.Printf("❌ [SLP] Matris %d - SLP algoritması hatası (%.2f saniye): %v", matrix.ID, duration.Seconds(), err)
 					}
 				case "sbp":
+					log.Printf("⏳ [SBP] Matris %d için SBP algoritması başlatıldı", matrix.ID)
 					sbp := NewSBPAlgorithm(10)
 					if result, err := sbp.Solve(matrixData); err == nil {
 						sbpResult = &result
+						duration := time.Since(algorithmStartTime)
+						log.Printf("✅ [SBP] Matris %d - SBP algoritması tamamlandı: %.2f saniye (XOR count: %d)", 
+							matrix.ID, duration.Seconds(), result.XorCount)
 					} else {
-						log.Printf("SBP algoritması hatası (ID %d): %v", matrix.ID, err)
+						duration := time.Since(algorithmStartTime)
+						log.Printf("❌ [SBP] Matris %d - SBP algoritması hatası (%.2f saniye): %v", matrix.ID, duration.Seconds(), err)
 					}
 				}
 			}
 
 			// Update database with results
+			dbUpdateStartTime := time.Now()
 			err = db.UpdateMatrixResultsWithSBP(matrix.ID, boyarResult, paarResult, slpResult, sbpResult)
+			dbUpdateDuration := time.Since(dbUpdateStartTime)
+			matrixTotalDuration := time.Since(matrixStartTime)
+			
 			if err != nil {
-				log.Printf("Algoritma sonuçları güncellenemedi (ID %d): %v", matrix.ID, err)
+				log.Printf("❌ [BULK-RECALCULATE] Matris %d - Algoritma sonuçları güncellenemedi (DB güncelleme: %.2f saniye, Matris toplam: %.2f saniye): %v", 
+					matrix.ID, dbUpdateDuration.Seconds(), matrixTotalDuration.Seconds(), err)
 			} else {
-				log.Printf("Matris %d algoritmaları tamamlandı", matrix.ID)
+				log.Printf("🎉 [BULK-RECALCULATE] Matris %d algoritmaları tamamlandı! (DB güncelleme: %.2f saniye, Matris toplam: %.2f saniye)", 
+					matrix.ID, dbUpdateDuration.Seconds(), matrixTotalDuration.Seconds())
 			}
 		}
-		log.Printf("Toplu algoritma hesaplama tamamlandı: %d matris işlendi", len(matrices))
+		bulkTotalDuration := time.Since(bulkStartTime)
+		log.Printf("🏁 [BULK-RECALCULATE] Toplu algoritma hesaplama tamamlandı: %d matris işlendi (Toplam süre: %.2f saniye, Ortalama: %.2f saniye/matris)", 
+			len(matrices), bulkTotalDuration.Seconds(), bulkTotalDuration.Seconds()/float64(len(matrices)))
 	}()
 
 	response := BulkRecalculateResponse{
